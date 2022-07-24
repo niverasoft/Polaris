@@ -118,7 +118,7 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="Developer" xml:space="preserve">
-    <value>Arkey Labs</value>
+    <value>Nivera Technologies</value>
     <comment>The bot's developer.</comment>
   </data>
   <data name="Logo" xml:space="preserve">
@@ -131,7 +131,7 @@
     <comment>An ASCII art version of Polaris.</comment>
   </data>
   <data name="Version" xml:space="preserve">
-    <value>1-0-0-B-TES</value>
+    <value>1-0-1-A-TES</value>
     <comment>The bot's version, which is then parsed.</comment>
   </data>
 </root>

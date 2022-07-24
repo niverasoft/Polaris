@@ -151,13 +151,98 @@ namespace Polaris.Core
                 .WithFooter("© Nivera, 2022"));
         }
 
+        [Command("join")]
+        [RequireGuild]
+        public async Task Join(CommandContext ctx)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("The Lavalink Server is not connected!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (ctx.Member.VoiceState == null || ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerLavalinkCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("A song is currently playing.")
+                    .MakeError());
+
+                return;
+            }
+
+            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
+
+            await coreCollection.ServerLavalinkCore.JoinAsync(ctx.Member.VoiceState.Channel, ctx.Channel);
+        }
+
+        [Command("leave")]
+        [RequireGuild]
+        public async Task Leave(CommandContext ctx)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("The Lavalink Server is not connected!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (ctx.Member.VoiceState == null || ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (!coreCollection.ServerLavalinkCore.IsConnected)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("I am not in a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerLavalinkCore.Voice == null || coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not in the same voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
+
+            await coreCollection.ServerLavalinkCore.LeaveAsync();
+        }
+
         [Command("play")]
         [RequireGuild]
         public async Task Play(CommandContext ctx, [RemainingText] string url)
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
 
-            if (!coreCollection.ServerLavalinkCore.IsConnected)
+            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("The Lavalink Server is not connected!")
@@ -175,7 +260,480 @@ namespace Polaris.Core
                 return;
             }
 
-            await coreCollection.ServerLavalinkCore.PlayAsync(url, ctx.User);
+            if (ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not in the same voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
+
+            await coreCollection.ServerLavalinkCore.PlayAsync(url, ctx.Member.VoiceState.Channel, ctx.Channel, ctx.User);
+        }
+
+        [Command("pause")]
+        [RequireGuild]
+        public async Task Pause(CommandContext ctx)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("The Lavalink Server is not connected!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not in the same voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
+
+            await coreCollection.ServerLavalinkCore.PauseAsync();
+        }
+
+        [Command("resume")]
+        [RequireGuild]
+        public async Task Resume(CommandContext ctx)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("The Lavalink Server is not connected!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not in the same voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
+
+            await coreCollection.ServerLavalinkCore.ResumeAsync();
+        }
+
+        [Command("nowplaying")]
+        [RequireGuild]
+        public async Task NowPlaying(CommandContext ctx)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("The Lavalink Server is not connected!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not in the same voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
+
+            await coreCollection.ServerLavalinkCore.NowPlaying();
+        }
+
+        [Command("seek")]
+        [RequireGuild]
+        public async Task Seek(CommandContext ctx, TimeSpan time)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("The Lavalink Server is not connected!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not in the same voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
+
+            await coreCollection.ServerLavalinkCore.SeekAsync(time);
+        }
+
+        [Command("playpartial")]
+        [RequireGuild]
+        public async Task PlayPartial(CommandContext ctx, TimeSpan from, TimeSpan to)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("The Lavalink Server is not connected!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not in the same voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
+
+            await coreCollection.ServerLavalinkCore.PlayPartial(from, to);
+        }
+
+        [Command("queue")]
+        [RequireGuild]
+        public async Task Queue(CommandContext ctx)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("The Lavalink Server is not connected!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not in the same voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
+
+            await coreCollection.ServerLavalinkCore.ViewQueueAsync(ctx.User);
+        }
+
+        [Command("clearqueue")]
+        [RequireGuild]
+        public async Task ClearQueue(CommandContext ctx)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("The Lavalink Server is not connected!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not in the same voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
+
+            await coreCollection.ServerLavalinkCore.ClearQueueAsync();
+        }
+
+        [Command("loop")]
+        [RequireGuild]
+        public async Task Loop(CommandContext ctx)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("The Lavalink Server is not connected!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not in the same voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
+
+            if (coreCollection.ServerLavalinkCore.IsLooping)
+            {
+                coreCollection.ServerLavalinkCore.IsLooping = false;
+
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Looping disabled.")
+                    .WithColor(ColorPicker.SuccessColor)
+                    .AddEmoteAuthor(EmotePicker.RepeatEmote));
+            }
+            else
+            {
+                coreCollection.ServerLavalinkCore.IsLooping = true;
+
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Looping enabled.")
+                    .WithColor(ColorPicker.SuccessColor)
+                    .AddEmoteAuthor(EmotePicker.RepeatEmote));
+            }
+        }
+
+        [Command("stop")]
+        [RequireGuild]
+        public async Task Stop(CommandContext ctx)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("The Lavalink Server is not connected!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not in the same voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
+
+            await coreCollection.ServerLavalinkCore.StopAsync();
+        }
+
+        [Command("volume")]
+        [RequireGuild]
+        public async Task Volume(CommandContext ctx, int volume)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("The Lavalink Server is not connected!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerLavalinkCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("A song is currently playing.")
+                    .MakeError());
+
+                return;
+            }
+
+            if (ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not in the same voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
+
+            await coreCollection.ServerLavalinkCore.SetVolumeAsync(volume);
+        }
+
+        [Command("skip")]
+        [RequireGuild]
+        public async Task Skip(CommandContext ctx)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("The Lavalink Server is not connected!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerLavalinkCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("A song is currently playing.")
+                    .MakeError());
+
+                return;
+            }
+
+            if (ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not in the same voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
+
+            await coreCollection.ServerLavalinkCore.SkipAsync();
         }
 
         [Command("setstatus")]

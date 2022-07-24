@@ -49,6 +49,8 @@ namespace Polaris.Core
 {
     public class ServerLavalinkCore
     {
+        public const string TimeSpanFormat = "hh:mm:ss";
+
         private string IP;
         private string Passwd;
 
@@ -107,9 +109,17 @@ namespace Polaris.Core
             }
         }
 
+        public bool IsServerConnected
+        {
+            get
+            {
+                return LavalinkNode != null && LavalinkNode.IsConnected;
+            }
+        }
+
         public bool IsPlaying
         {
-            get => LavalinkGuild?.CurrentState != null && LavalinkGuild.CurrentState.CurrentTrack != null;
+            get => LavalinkGuild?.CurrentState != null && (LavalinkGuild.CurrentState.CurrentTrack != null || LavalinkGuild.CurrentState.PlaybackPosition.Milliseconds > 0);
         }
 
         public bool IsLooping { get; set; }
@@ -117,6 +127,16 @@ namespace Polaris.Core
         public LavalinkTrack Track
         {
             get => LavalinkGuild?.CurrentState?.CurrentTrack;
+        }
+
+        public DiscordChannel Voice
+        {
+            get => LavalinkGuild?.Channel;
+        }
+
+        public DiscordChannel Text
+        {
+            get => TextChannel;
         }
 
         public ServerLavalinkCore()
@@ -216,7 +236,7 @@ namespace Polaris.Core
 
                 TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
                     .WithAuthor($"Joined {x.Channel.Name}")
-                    .MakeInfo());
+                    .MakeSuccess());
 
                 VoiceChannel = x.Channel;
                 LavalinkGuild = x;
@@ -255,15 +275,10 @@ namespace Polaris.Core
             {
                 Log.Verbose($"Finished playing {e.Track.Title} in {x.Guild.Name}: {e.Reason}");
 
-                await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Playback Update")
-                    .WithTitle("Finished playing.")
-                    .WithFooter(e.Reason.ToString())
-                    .MakeInfo());
-
                 if (IsLooping)
                 {
                     await LavalinkGuild.PlayAsync(LavalinkTrack);
+                    await NowPlaying();
                 }
                 else
                 {
@@ -273,6 +288,7 @@ namespace Polaris.Core
                 if (Queue.Count > 0)
                 {
                     await LavalinkGuild.PlayAsync(Queue.First());
+                    await NowPlaying();
 
                     Queue.RemoveAt(0);
                 }
@@ -282,16 +298,8 @@ namespace Polaris.Core
             {
                 Log.Verbose($"Started playing {e.Track.Title} in {x.Guild.Name}");
 
-                TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Now Playing")
-                    .AddField("Title", $"[{e.Track.Title}]({e.Track.Uri.AbsoluteUri})", true)
-                    .AddField("Author", e.Track.Author, true)
-                    .AddField("Duration", e.Track.Length.ToString("{0:hh\\:mm\\:ss}"), true)
-                    .AddField("Position", e.Track.Position.ToString("{0:hh\\:mm\\:ss}"), true)
-                    .AddEmoteAuthor(EmotePicker.PlayEmote)
-                    .WithColor(ColorPicker.InfoColor));
-
                 LavalinkGuild = e.Player;
+                LavalinkTrack = e.Track;
 
                 return Task.CompletedTask;
             };
@@ -392,7 +400,6 @@ namespace Polaris.Core
             string emote = EmbedHelper.VolumeEmoteToUse(volume);
 
             await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
-                .WithAuthor("Volume Update")
                 .WithTitle($"{emote} Volume set to {volume}%")
                 .WithColor(ColorPicker.InfoColor));
         }
@@ -454,8 +461,8 @@ namespace Polaris.Core
                 .WithAuthor("Now Playing")
                 .AddField("Title", $"[{track.Title}]({track.Uri.AbsoluteUri})", true)
                 .AddField("Author", track.Author, true)
-                .AddField("Duration", track.Length.ToString("{0:hh\\:mm\\:ss}"), true)
-                .AddField("Position", LavalinkGuild.CurrentState.PlaybackPosition.ToString("{0:hh\\:mm\\:ss}"), true)
+                .AddField("Duration", track.Length.ToString(), true)
+                .AddField("Position", LavalinkGuild.CurrentState.PlaybackPosition.ToString(), true)
                 .AddEmoteAuthor(EmotePicker.PlayEmote)
                 .WithColor(ColorPicker.InfoColor));
         }
@@ -473,12 +480,12 @@ namespace Polaris.Core
 
             var current = LavalinkGuild.CurrentState.PlaybackPosition;
 
-            await PauseAsync();
+            await LavalinkGuild.PauseAsync();
             await LavalinkGuild.SeekAsync(time);
-            await ResumeAsync();
+            await LavalinkGuild.ResumeAsync();
 
             await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
-                .WithAuthor($"Started playing from {time.ToString("{0:hh\\:mm\\:ss}")}")
+                .WithAuthor($"Started playing from {time.ToString()}")
                 .WithColor(ColorPicker.InfoColor)
                 .AddEmoteAuthor(time > current ? EmotePicker.TrackForwardEmote : EmotePicker.TrackReverseEmote));
         }
@@ -496,8 +503,7 @@ namespace Polaris.Core
 
             var track = Track;
 
-            await StopAsync();
-
+            await LavalinkGuild.StopAsync();
             await LavalinkGuild.PlayPartialAsync(track, from, to);
         }
 
@@ -524,15 +530,39 @@ namespace Polaris.Core
             Queue.RemoveAt(0);
         }
 
-        public async Task PlayAsync(string searchOrUrl, DiscordUser author = null)
+        public async Task SkipAsync()
         {
+            if (Queue.Count < 1)
+            {
+                await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("There is nothing in the queue, stopping playback.")
+                    .MakeWarn());
+
+                IsLooping = false;
+
+                await LavalinkGuild.StopAsync();
+
+                return;
+            }
+
+            bool loop = IsLooping;
+
+            IsLooping = false;
+            await LavalinkGuild.StopAsync();
+            await LavalinkGuild.PlayAsync(Queue.First());
+            Queue.RemoveAt(0);
+            await NowPlaying();
+            IsLooping = loop;
+        }
+
+        public async Task PlayAsync(string searchOrUrl, DiscordChannel voice, DiscordChannel text, DiscordUser author = null)
+        {
+            VoiceChannel = voice;
+            TextChannel = text;
+
             await JoinAsync(VoiceChannel, TextChannel);
 
-            var url = StringHelpers.FindURL(searchOrUrl);
-
-            LavalinkSearchType lavalinkSearchType = url == null ? LavalinkSearchType.Youtube | LavalinkSearchType.SoundCloud | LavalinkSearchType.Plain : (url.Contains("youtube") || url.Contains("youtu.be") ? LavalinkSearchType.Youtube : LavalinkSearchType.SoundCloud);
-
-            LavalinkLoadResult res = await LavalinkGuild.GetTracksAsync(searchOrUrl, lavalinkSearchType);
+            LavalinkLoadResult res = await LavalinkGuild.GetTracksAsync(searchOrUrl);
 
             if (res.LoadResultType == LavalinkLoadResultType.LoadFailed)
             {
@@ -583,10 +613,18 @@ namespace Polaris.Core
 
             if (IsPlaying)
             {
-                await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Playback Failed")
-                    .WithTitle("There is a track currently playing, song queued.")
-                    .MakeInfo());
+                TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("There's a song currently playing, request queued.")
+                    .AddField("Title", $"[{trackToPlay.Title}]({trackToPlay.Uri.AbsoluteUri})", true)
+                    .AddField("Author", trackToPlay.Author, true)
+                    .AddField("Duration", trackToPlay.Length.ToString(), true)
+                    .AddField("Position", LavalinkGuild.CurrentState.PlaybackPosition.ToString(), true)
+                    .AddEmoteAuthor(EmotePicker.PlayEmote)
+                    .WithColor(ColorPicker.InfoColor));
+
+                Queue.Add(trackToPlay);
+
+                return;
             }
 
             if (trackToPlay == null)
@@ -598,6 +636,17 @@ namespace Polaris.Core
 
                 return;
             }
+
+            TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
+                .WithAuthor("Now Playing")
+                .AddField("Title", $"[{trackToPlay.Title}]({trackToPlay.Uri.AbsoluteUri})", true)
+                .AddField("Author", trackToPlay.Author, true)
+                .AddField("Duration", trackToPlay.Length.ToString(), true)
+                .AddField("Position", LavalinkGuild.CurrentState.PlaybackPosition.ToString(), true)
+                .AddEmoteAuthor(EmotePicker.PlayEmote)
+                .WithColor(ColorPicker.InfoColor));
+
+            LavalinkTrack = trackToPlay;
 
             await LavalinkGuild.PlayAsync(trackToPlay);
         }

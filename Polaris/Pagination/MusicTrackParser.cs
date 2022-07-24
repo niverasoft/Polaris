@@ -21,7 +21,7 @@ namespace Polaris.Pagination
             {
                 pages.Add(new Page
                 {
-                    Embed = discordEmbedBuilder.WithDescription($"{NumberEmotes.One} [{item.Title}]({item.URL}) [{item.Duration.ToString("{0:hh\\:mm\\:ss}")}]")
+                    Embed = discordEmbedBuilder.WithDescription($"{NumberEmotes.One} [{item.Title}]({item.URL}) [{item.Duration.ToString()}]")
                 });
             }
             else
@@ -34,7 +34,7 @@ namespace Polaris.Pagination
 
                 if (lines.Length + 1 < EmbedLimits.ItemsPerPage)
                 {
-                    builder.Description += $"{NumberEmotes.NumberToEmote(PageParser.GetTotalAmount(pages) + 1)} [{item.Title}]({item.URL}) [{item.Duration.ToString("{0:hh\\:mm\\:ss}")}]";
+                    builder.Description += $"{NumberEmotes.NumberToEmote(PageParser.GetTotalAmount(pages) + 1)} [{item.Title}]({item.URL}) [{item.Duration.ToString()}]";
 
                     page.Embed = builder.Build();
                 }
@@ -42,7 +42,7 @@ namespace Polaris.Pagination
                 {
                     pages.Add(new Page
                     {
-                        Embed = new DiscordEmbedBuilder(discordEmbedBuilder.Build()).WithDescription($"{NumberEmotes.NumberToEmote(PageParser.GetTotalAmount(pages) + 1)} [{item.Title}]({item.URL}) [{item.Duration.ToString("{0:hh\\:mm\\:ss}")}]")
+                        Embed = new DiscordEmbedBuilder(discordEmbedBuilder.Build()).WithDescription($"{NumberEmotes.NumberToEmote(PageParser.GetTotalAmount(pages) + 1)} [{item.Title}]({item.URL}) [{item.Duration.ToString()}]")
                     });
                 }
             }
