@@ -6,6 +6,7 @@ using Nivera;
 using Polaris.Properties;
 using Polaris.Config;
 using Polaris.Discord;
+using Polaris.Plugins;
 
 namespace Polaris.Boot
 {
@@ -88,6 +89,7 @@ namespace Polaris.Boot
                 Log.Info("Thank you for using Polaris!");
 
                 await DiscordNetworkHandlers.InstallAsync();
+                PluginManager.Enable();
                 await Task.Delay(-1);
             }
             catch (Exception ex)
