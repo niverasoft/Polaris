@@ -28,6 +28,7 @@ namespace Polaris.Boot
             Log.Warn($"Exiting: {message}");
 
             TaskSystems.Kill();
+            BootLoader.Kill();
             DiscordNetworkHandlers.Kill();
 
             Environment.Exit(0);
@@ -76,7 +77,7 @@ namespace Polaris.Boot
 
                 Log.Info($"Starting up (v{BuildInfo.Version}) ..");
 
-                BootLoader.Commence(args);
+                await BootLoader.Commence(args);
 
                 Log.Info("Welcome to Polaris!");
 

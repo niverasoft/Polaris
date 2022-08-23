@@ -68,35 +68,44 @@ namespace Polaris.Discord
         {
             if (ConfigManager.HasAnnouncement)
             {
-                foreach (var core in ServerCores)
+                while (!ServerCores.All(x => x.LastAnnouncementSent))
                 {
-                    if (core.LastAnnouncementSent)
-                        continue;
+                    await Task.Delay(100);
 
-                    await core.Guild.SystemChannel?.SendMessageAsync(new DiscordEmbedBuilder()
-                        .WithColor(ColorPicker.InfoColor)
-                        .WithAuthor("Update Log")
-                        .AddEmoteAuthor(EmotePicker.LoudspeakerEmote)
-                        .WithDescription(ConfigManager.Announcement));
+                    foreach (var core in ServerCores)
+                    {
+                        if (core.LastAnnouncementSent)
+                            continue;
 
-                    core.LastAnnouncementSent = true;
+                        await core.Guild.SystemChannel?.SendMessageAsync(new DiscordEmbedBuilder()
+                            .WithColor(ColorPicker.InfoColor)
+                            .WithAuthor("Update Log")
+                            .AddEmoteAuthor(EmotePicker.LoudspeakerEmote)
+                            .WithDescription(ConfigManager.Announcement));
+
+                        core.LastAnnouncementSent = true;
+                    }
                 }
 
-                if (ServerCores.All(x => x.LastAnnouncementSent))
-                {
-                    ConfigManager.Announcement = null;
-                    ConfigManager.HasAnnouncement = false;
+                ConfigManager.Announcement = null;
+                ConfigManager.HasAnnouncement = false;
 
-                    if (File.Exists($"{Directory.GetCurrentDirectory()}/announcement.txt"))
-                        File.Delete($"{Directory.GetCurrentDirectory()}/announcement.txt");
+                if (File.Exists($"{Directory.GetCurrentDirectory()}/announcement.txt"))
+                    File.Delete($"{Directory.GetCurrentDirectory()}/announcement.txt");
 
-                    Log.Verbose("Last announcement deleted.");
-                }
+                Log.Verbose("Last announcement deleted.");
             }
         }
 
         public static async Task InstallAsync()
         {
+            if (GlobalConfig.Instance.Token == null || GlobalConfig.Instance.Token.Length <= 0)
+            {
+                Log.Error($"You need to set the bot token with the -token launch argument! Exiting in 10 seconds ..");
+                await Task.Delay(10000);
+                Program.Kill("Missing bot token.");
+            }
+
             if (ConfigManager.HasAnnouncement)
             {
                 Log.Info("Pending announcement loaded.");

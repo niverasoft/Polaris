@@ -19,6 +19,7 @@
     <PackageReference Include="HSNXT.DSharpPlus.Extended" Version="5.0.0-pre.210" />
     <PackageReference Include="HSNXT.DSharpPlus.Extended.Emoji" Version="5.0.0-pre.210" />
     <PackageReference Include="HSNXT.DSharpPlus.ModernEmbedBuilder" Version="5.0.0-pre.210" />
+    <PackageReference Include="ShellProgressBar" Version="5.2.0" />
     <PackageReference Include="System.Collections.Concurrent" Version="4.3.0" />
   </ItemGroup>
 

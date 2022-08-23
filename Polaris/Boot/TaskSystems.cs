@@ -4,13 +4,89 @@ using System.Collections.Generic;
 
 using Nivera;
 
+using Polaris.Reporting;
+
 namespace Polaris.Boot
 {
+    public class TaskWatchObject : ReporterObject
+    {
+        public long TicksCount;
+        public long TotalTicks;
+        public long ErroredTicks;
+    }
+
     public static class TaskSystems
     {
+        private static Reporter reporter;
+
         static TaskSystems()
         {
             Log.JoinCategory("taskscheduler");
+
+            reporter = new Reporter(120, -1, () =>
+            {
+                return true;
+            }, () =>
+
+            {
+                return new TaskWatchObject()
+                {
+                    ErroredTicks = ErroredTicks,
+                    TicksCount = TicksCount,
+                    TotalTicks = TotalTicks
+                };
+            }, 
+            
+            x =>
+            {
+                bool isBehind = IsBehind();
+
+                if (isBehind)
+                {
+                    Log.Warn($"The task scheduler is running behind.");
+                }
+                else
+                {
+                    Log.Info($"The task scheduler is not behind.");
+                }
+
+                TaskWatchObject taskWatchObject = x as TaskWatchObject;
+
+                long difference = taskWatchObject.TotalTicks - taskWatchObject.TicksCount;
+
+                if (difference >= MaxTickDifference)
+                {
+                    Log.Error($"Task scheduler is running {difference} ticks behind! It's recommended to restart the bot. The task scheduler will restart itself if this continues!");
+
+                    if (difference >= DifferenceToRestart)
+                    {
+                        List<Action> updateTasks = new List<Action>(_updateTasks);
+                        List<Action> secondUpdateTasks = new List<Action>(_secondUpdateTasks);
+
+                        Log.Error($"Task scheduler is restarting!");
+
+                        Restart();
+
+                        _updateTasks.AddRange(updateTasks);
+                        _secondUpdateTasks.AddRange(secondUpdateTasks);
+                    }
+                }
+
+                if (taskWatchObject.ErroredTicks >= MaxTickDifference / 2)
+                {
+                    Log.Error($"There are too many errored ticks! It's recommended to restart the bot. The task scheduler will restart itself if this continues!");
+
+                    if (taskWatchObject.ErroredTicks >= DifferenceToRestart / 2)
+                    {
+                        List<Action> updateTasks = new List<Action>(_updateTasks);
+                        List<Action> secondUpdateTasks = new List<Action>(_secondUpdateTasks);
+
+                        Log.Error($"Task scheduler is restarting (too many errored ticks)!");
+
+                        Restart();
+                    }
+                }
+            });
         }
 
         private static bool FirstExited;
@@ -30,7 +106,8 @@ namespace Polaris.Boot
         public static long TotalTicks;
         public static long ErroredTicks;
 
-        public const long MaxTickDifference = 5000;
+        public const long MaxTickDifference = 100;
+        public const long DifferenceToRestart = 500;
 
         public static bool IsBehind()
         {
@@ -49,6 +126,8 @@ namespace Polaris.Boot
 
         public static void Restart()
         {
+            Kill();
+
             IsPaused = false;
             ShouldKill = false;
             HasExited = false;
@@ -115,8 +194,6 @@ namespace Polaris.Boot
             {
                 while (!ShouldKill)
                 {
-                    TotalTicks++;
-
                     if (IsPaused)
                         continue;
                     else
