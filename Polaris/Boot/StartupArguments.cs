@@ -160,6 +160,24 @@ namespace Polaris.Boot
 
                                 break;
                             }
+
+                        case "includesystemdebug":
+                            {
+                                if (bool.TryParse(paramValue, out bool include))
+                                {
+                                    GlobalConfig.Instance.IncludeSystemDebug = include;
+
+                                    Log.Info($"Updated the value of IncludeSystemDebug: {include}; saving changes.");
+
+                                    ConfigManager.Save();
+                                }
+                                else
+                                {
+                                    Log.Error($"Failed to parse {paramValue} to a boolean.");
+                                }
+
+                                break;
+                            }
                     }
                 }
             }

@@ -43,6 +43,7 @@ using Polaris.Helpers;
 using Polaris.Properties;
 
 using Nivera;
+using Nivera.Utils;
 
 namespace Polaris.Core
 {
@@ -133,6 +134,7 @@ namespace Polaris.Core
 
         [RequireGuild]
         [Command("info")]
+        [Aliases("botinfo")]
         public async Task BotInfo(CommandContext ctx)
         {
             var cores = CoreCollection.Get(ctx);
@@ -142,13 +144,22 @@ namespace Polaris.Core
                 .WithColor(DiscordColor.Blue)
                 .WithTitle("About me!")
                 .WithUrl("https://github.com/niverasoft/Polaris")
-                .AddField("Version", $"Polaris ({BuildInfo.Version})\nGateway (v{ctx.Client.GatewayVersion})", true)
+                .AddField("Version", $"Polaris ({BuildInfo.Version} / {BuildInfo.Branch})\nGateway (v{ctx.Client.GatewayVersion})", true)
                 .AddField("Library", $"DSharpPlus ({ctx.Client.VersionString})\nNiveraLib ({LibProperties.LibraryVersion})", true)
                 .AddField("Ping", $"{ctx.Client.Ping} ms", true)
-                .AddField("Core ID", $"P{cores.ServerCore.CoreId}", true)
+                .AddField("Core ID", $"P-{cores.ServerCore.CoreId}", true)
                 .AddField("Owner", $"<@!{GlobalConfig.Instance.BotOwnerId}>", true)
                 .WithTimestamp(DateTimeOffset.Now.ToLocalTime())
                 .WithFooter("© Nivera, 2022"));
+
+            if (GlobalConfig.Instance.IncludeSystemDebug)
+            {
+                await ctx.Channel.SendMessageAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("System Information Debug")
+                    .WithDescription(SystemHelper.BuiltInfo.ToString())
+                    .WithFooter("You are seeing this message because you enabled system information debug in the global config.")
+                    .MakeInfo());
+            }
         }
 
         [Command("join")]
@@ -156,6 +167,15 @@ namespace Polaris.Core
         public async Task Join(CommandContext ctx)
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!GlobalConfig.Instance.AllowLavalink)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Lavalink is disabled in the config!")
+                    .MakeError());
+
+                return;
+            }
 
             if (!coreCollection.ServerLavalinkCore.IsServerConnected)
             {
@@ -190,10 +210,20 @@ namespace Polaris.Core
         }
 
         [Command("leave")]
+        [Aliases("dis", "disconnect")]
         [RequireGuild]
         public async Task Leave(CommandContext ctx)
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!GlobalConfig.Instance.AllowLavalink)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Lavalink is disabled in the config!")
+                    .MakeError());
+
+                return;
+            }
 
             if (!coreCollection.ServerLavalinkCore.IsServerConnected)
             {
@@ -237,10 +267,20 @@ namespace Polaris.Core
         }
 
         [Command("play")]
+        [Aliases("pl")]
         [RequireGuild]
         public async Task Play(CommandContext ctx, [RemainingText] string url)
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!GlobalConfig.Instance.AllowLavalink)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Lavalink is disabled in the config!")
+                    .MakeError());
+
+                return;
+            }
 
             if (!coreCollection.ServerLavalinkCore.IsServerConnected)
             {
@@ -284,6 +324,7 @@ namespace Polaris.Core
         }
 
         [Command("pause")]
+        [Aliases("ps")]
         [RequireGuild]
         public async Task Pause(CommandContext ctx)
         {
@@ -322,10 +363,20 @@ namespace Polaris.Core
         }
 
         [Command("resume")]
+        [Aliases("res")]
         [RequireGuild]
         public async Task Resume(CommandContext ctx)
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!GlobalConfig.Instance.AllowLavalink)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Lavalink is disabled in the config!")
+                    .MakeError());
+
+                return;
+            }
 
             if (!coreCollection.ServerLavalinkCore.IsServerConnected)
             {
@@ -360,10 +411,20 @@ namespace Polaris.Core
         }
 
         [Command("nowplaying")]
+        [Aliases("np")]
         [RequireGuild]
         public async Task NowPlaying(CommandContext ctx)
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!GlobalConfig.Instance.AllowLavalink)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Lavalink is disabled in the config!")
+                    .MakeError());
+
+                return;
+            }
 
             if (!coreCollection.ServerLavalinkCore.IsServerConnected)
             {
@@ -403,6 +464,15 @@ namespace Polaris.Core
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
 
+            if (!GlobalConfig.Instance.AllowLavalink)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Lavalink is disabled in the config!")
+                    .MakeError());
+
+                return;
+            }
+
             if (!coreCollection.ServerLavalinkCore.IsServerConnected)
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
@@ -436,10 +506,20 @@ namespace Polaris.Core
         }
 
         [Command("playpartial")]
+        [Aliases("ppl")]
         [RequireGuild]
         public async Task PlayPartial(CommandContext ctx, TimeSpan from, TimeSpan to)
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!GlobalConfig.Instance.AllowLavalink)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Lavalink is disabled in the config!")
+                    .MakeError());
+
+                return;
+            }
 
             if (!coreCollection.ServerLavalinkCore.IsServerConnected)
             {
@@ -474,6 +554,7 @@ namespace Polaris.Core
         }
 
         [Command("queue")]
+        [Aliases("q")]
         [RequireGuild]
         public async Task Queue(CommandContext ctx)
         {
@@ -512,10 +593,20 @@ namespace Polaris.Core
         }
 
         [Command("clearqueue")]
+        [Aliases("cq")]
         [RequireGuild]
         public async Task ClearQueue(CommandContext ctx)
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!GlobalConfig.Instance.AllowLavalink)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Lavalink is disabled in the config!")
+                    .MakeError());
+
+                return;
+            }
 
             if (!coreCollection.ServerLavalinkCore.IsServerConnected)
             {
@@ -554,6 +645,15 @@ namespace Polaris.Core
         public async Task Loop(CommandContext ctx)
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!GlobalConfig.Instance.AllowLavalink)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Lavalink is disabled in the config!")
+                    .MakeError());
+
+                return;
+            }
 
             if (!coreCollection.ServerLavalinkCore.IsServerConnected)
             {
@@ -610,6 +710,15 @@ namespace Polaris.Core
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
 
+            if (!GlobalConfig.Instance.AllowLavalink)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Lavalink is disabled in the config!")
+                    .MakeError());
+
+                return;
+            }
+
             if (!coreCollection.ServerLavalinkCore.IsServerConnected)
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
@@ -643,10 +752,20 @@ namespace Polaris.Core
         }
 
         [Command("volume")]
+        [Aliases("vol")]
         [RequireGuild]
         public async Task Volume(CommandContext ctx, int volume)
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!GlobalConfig.Instance.AllowLavalink)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Lavalink is disabled in the config!")
+                    .MakeError());
+
+                return;
+            }
 
             if (!coreCollection.ServerLavalinkCore.IsServerConnected)
             {
@@ -690,10 +809,20 @@ namespace Polaris.Core
         }
 
         [Command("skip")]
+        [Aliases("s")]
         [RequireGuild]
         public async Task Skip(CommandContext ctx)
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!GlobalConfig.Instance.AllowLavalink)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Lavalink is disabled in the config!")
+                    .MakeError());
+
+                return;
+            }
 
             if (!coreCollection.ServerLavalinkCore.IsServerConnected)
             {
@@ -737,10 +866,11 @@ namespace Polaris.Core
         }
 
         [Command("setstatus")]
+        [Aliases("status", "sts")]
         [RequireGuild]
         public async Task SetStatus(CommandContext ctx, [RemainingText] string status)
         {
-            if (!ctx.CheckPerms("owner", out var cores))
+            if (!ctx.CheckPerms("owner", out _))
                 return;
 
             GlobalConfig.Instance.BotStatus = status;

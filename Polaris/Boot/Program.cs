@@ -74,8 +74,7 @@ namespace Polaris.Boot
 
                 NativeHandlers.InstallHandlers();
 
-                Log.Info("Starting up ..");
-                Log.Verbose($"System: {BuildInfo.Version} on {Environment.OSVersion.VersionString} [{Environment.OSVersion.Platform}]");
+                Log.Info($"Starting up (v{BuildInfo.Version}) ..");
 
                 BootLoader.Commence(args);
 
@@ -83,13 +82,11 @@ namespace Polaris.Boot
 
                 Console.WriteLine(Resources.Logo);
 
-                if (Environment.OSVersion.Platform == PlatformID.Unix)
-                    Log.Warn("Polaris is not completely compatible with Unix based systems! You should use the Windows version if you have the option, otherwise you have to expect some issues.");
-
                 Log.Info("Thank you for using Polaris!");
 
-                await DiscordNetworkHandlers.InstallAsync();
                 PluginManager.Enable();
+
+                await DiscordNetworkHandlers.InstallAsync();
                 await Task.Delay(-1);
             }
             catch (Exception ex)

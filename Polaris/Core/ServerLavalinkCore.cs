@@ -119,7 +119,7 @@ namespace Polaris.Core
 
         public bool IsPlaying
         {
-            get => LavalinkGuild?.CurrentState != null && (LavalinkGuild.CurrentState.CurrentTrack != null || LavalinkGuild.CurrentState.PlaybackPosition.Milliseconds > 0);
+            get => LavalinkGuild?.CurrentState != null && Track != null;
         }
 
         public bool IsLooping { get; set; }
@@ -147,7 +147,10 @@ namespace Polaris.Core
             Lavalink.NodeDisconnected += Lavalink_NodeDisconnected;
 
             if (!GlobalConfig.Instance.AllowLavalink)
+            {
+                Log.Warn("The Lavalink core is disabled in the config. Launch Polaris with the \"-globalconfig:allowlava=true\" argument to enable it.");
                 return;
+            }
 
             if (Lavalink.ConnectedNodes.Count < 1)
             {
@@ -548,10 +551,14 @@ namespace Polaris.Core
             bool loop = IsLooping;
 
             IsLooping = false;
+
             await LavalinkGuild.StopAsync();
             await LavalinkGuild.PlayAsync(Queue.First());
+
             Queue.RemoveAt(0);
+
             await NowPlaying();
+
             IsLooping = loop;
         }
 
@@ -600,9 +607,7 @@ namespace Polaris.Core
                     .MakeInfo()), PaginationBehaviour.WrapAround, ButtonPaginationBehavior.Disable);
 
                 if (IsPlaying)
-                {
                     Queue.Add(trackToPlay);
-                }
 
                 Queue.AddRange(res.Tracks.Where(x => x.Identifier != trackToPlay.Identifier));
             }

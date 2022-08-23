@@ -20,6 +20,7 @@ namespace Polaris.Config
         public bool Debug { get; set; }
         public bool Verbose { get; set; }
         public bool AllowLavalink { get; set; } = false;
+        public bool IncludeSystemDebug { get; set; } = false;
 
         public byte[] Token { get; set; }
 

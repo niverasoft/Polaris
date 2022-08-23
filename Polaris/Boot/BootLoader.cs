@@ -4,7 +4,7 @@
     {
         static BootLoader()
         {
-            Nivera.Log.JoinCategory("boot/loader");
+            Nivera.Log.JoinCategory("bootloader");
         }
 
         public static void Commence(string[] args)
