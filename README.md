@@ -5,11 +5,11 @@ Polaris is a handy Discord bot that contains almost every function you can possi
 Versions have a really simple pattern. 
 
 **Example**: 1.0.0-A-TES
-The first number (1) is the **Major** version number.
-The second number (0) is the **Minor** version number.
-The third value (0) is the **Build** version number.
-The fourth letter (A) is the **Debug** version letter.
-The fifth part (TES) is the branch identifier.
+- The first number (1) is the **Major** version number.
+- The second number (0) is the **Minor** version number.
+- The third value (0) is the **Build** version number.
+- The fourth letter (A) is the **Debug** version letter.
+- The fifth part (TES) is the branch identifier.
 
 ## Version numbers
 
