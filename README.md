@@ -14,20 +14,20 @@ The fifth part (TES) is the branch identifier.
 ## Version numbers
 
 **Major**
-Major version number will be changed only if a really important update happens (like a full rewrite).
+version number will be changed only if a really important update happens (like a full rewrite).
 
 **Minor**
-Minor version number will be changed only if an important update/fix happens.
+version number will be changed only if an important update/fix happens.
 
 **Build**
-Build version number will be changed only if a fix is implemented, even a small one.
+version number will be changed only if a fix is implemented, even a small one.
 
 **Debug**
-The debug version letter will be changed only if a testing fix/testing build gets released.
+version letter will be changed only if a testing fix/testing build gets released.
 
 **Branch**
-The branch identifier is used to recognize the release build type.
+identifier is used to recognize the release build type.
 
-REL = Release, heavily tested build intented for everyday use.
-BET = Beta, lightly tested build with new features in testing, may contain bugs.
-TES = Testing, completely untested build with new features/fixes in testing, almost certainly contains bugs.
+- REL = Release, heavily tested build intented for everyday use.
+- BET = Beta, lightly tested build with new features in testing, may contain bugs.
+- TES = Testing, completely untested build with new features/fixes in testing, almost certainly contains bugs.
