@@ -17,10 +17,17 @@ namespace Polaris.Config
         public ulong BotOwnerId { get; set; }
         public string BotOwnerNickname { get; set; }
 
+        public List<ulong> DiscordPingIds { get; set; } = new List<ulong>();
+
         public bool Debug { get; set; }
         public bool Verbose { get; set; }
         public bool AllowLavalink { get; set; } = false;
         public bool IncludeSystemDebug { get; set; } = false;
+        public bool AllowDiscordLogOutput { get; set; } = false;
+        public bool LavalinkAtStart { get; set; } = false;
+        public bool CheckPackages { get; set; }
+
+        public ulong DiscordLogOutputChannelId { get; set; } = 0;
 
         public byte[] Token { get; set; }
 

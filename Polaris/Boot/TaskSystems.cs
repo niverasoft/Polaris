@@ -41,13 +41,13 @@ namespace Polaris.Boot
             {
                 bool isBehind = IsBehind();
 
-                if (isBehind)
+                if (IsBehind())
                 {
-                    Log.Warn($"The task scheduler is running behind.");
+                    Log.Warn($"IsBehind() => true");
                 }
                 else
                 {
-                    Log.Info($"The task scheduler is not behind.");
+                    Log.Info($"IsBehind() => false");
                 }
 
                 TaskWatchObject taskWatchObject = x as TaskWatchObject;
@@ -65,7 +65,7 @@ namespace Polaris.Boot
 
                         Log.Error($"Task scheduler is restarting!");
 
-                        Restart();
+                        Restart(true);
 
                         _updateTasks.AddRange(updateTasks);
                         _secondUpdateTasks.AddRange(secondUpdateTasks);
@@ -83,7 +83,7 @@ namespace Polaris.Boot
 
                         Log.Error($"Task scheduler is restarting (too many errored ticks)!");
 
-                        Restart();
+                        Restart(true);
                     }
                 }
             });
@@ -124,9 +124,10 @@ namespace Polaris.Boot
             HasExited = true;
         }
 
-        public static void Restart()
+        public static void Restart(bool kill = false)
         {
-            Kill();
+            if (kill)
+                Kill();
 
             IsPaused = false;
             ShouldKill = false;
@@ -148,8 +149,6 @@ namespace Polaris.Boot
 
         public static void OnUpdateKilled()
         {
-            Log.Verbose("Performing Update Cleanup");
-
             _updateTask.Dispose();
             _updateTask = null;
 
@@ -158,8 +157,6 @@ namespace Polaris.Boot
 
         public static void OnSecondUpdateKilled()
         {
-            Log.Verbose("Performing Second Update Cleanup");
-
             _secondUpdateTask.Dispose();
             _secondUpdateTask = null;
 

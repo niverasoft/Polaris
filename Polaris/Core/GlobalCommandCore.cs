@@ -44,6 +44,7 @@ using Polaris.Properties;
 
 using Nivera;
 using Nivera.Utils;
+using Polaris.Pagination;
 
 namespace Polaris.Core
 {
@@ -64,7 +65,7 @@ namespace Polaris.Core
                     .WithAuthor("Fatal error - failed to find this server's core collection! Issue reported.")
                     .MakeError());
 
-                Nivera.Log.Warn($"Failed to find the core collection of {ctx.Guild.Name} - {ctx.Guild.Id}");
+                Log.Warn($"Failed to find the core collection of {ctx.Guild.Name} - {ctx.Guild.Id}");
 
                 return false;
             }
@@ -147,6 +148,7 @@ namespace Polaris.Core
                 .AddField("Version", $"Polaris ({BuildInfo.Version} / {BuildInfo.Branch})\nGateway (v{ctx.Client.GatewayVersion})", true)
                 .AddField("Library", $"DSharpPlus ({ctx.Client.VersionString})\nNiveraLib ({LibProperties.LibraryVersion})", true)
                 .AddField("Ping", $"{ctx.Client.Ping} ms", true)
+                .AddField("Voice Gateway Ping", $"{CoreCollection.ActiveCores.Select(x => x.ServerRadioCore).FirstOrDefault(x => x.IsConnected)?.WebPing} ms", true)
                 .AddField("Core ID", $"P-{cores.ServerCore.CoreId}", true)
                 .AddField("Owner", $"<@!{GlobalConfig.Instance.BotOwnerId}>", true)
                 .WithTimestamp(DateTimeOffset.Now.ToLocalTime())
@@ -156,10 +158,274 @@ namespace Polaris.Core
             {
                 await ctx.Channel.SendMessageAsync(new DiscordEmbedBuilder()
                     .WithAuthor("System Information Debug")
-                    .WithDescription(SystemHelper.BuiltInfo.ToString())
+                    .AddField("Operating System", SystemHelper.Name, true)
+                    .AddField("Operating System Version", Environment.OSVersion.Version.ToString(), true)
+                    .AddField("Operating System Architecture", SystemHelper.Architecture, true)
+                    .AddField("Machine Uptime", new TimeSpan(SystemHelper.Is32Bit ? Environment.TickCount : Environment.TickCount64).ToString(), true)
+                    .AddField("App Runtime", SystemHelper.Runtime, true)
+                    .AddField("Processor Name", SystemHelper.CpuName, true)
+                    .AddField("Processor Cores", $"L{SystemHelper.CpuLogicalCores}, P{SystemHelper.CpuPhysicalCores}", true)
+                    .AddField("Processor Frequency", SystemHelper.CpuFrequencyString, true)
+                    .AddField("System Memory", $"{SystemHelper.RamFreeString.Replace("MB", "GB")} / {SystemHelper.RamTotalString.Replace("MB", "GB")}", true)
                     .WithFooter("You are seeing this message because you enabled system information debug in the global config.")
                     .MakeInfo());
             }
+        }
+
+        [Command("radionowplaying")]
+        [Aliases("rnp", "radionp")]
+        [RequireGuild]
+        public async Task RadioNowPlaying(CommandContext ctx)
+        {
+            await CoreCollection.Get(ctx)?.ServerRadioCore?.NowPlayingAsync();
+        }
+
+        [Command("addradio")]
+        [Aliases("ar")]
+        public async Task AddRadio(CommandContext ctx, string streamUrl, string dataUrl, [RemainingText] string radioName)
+        {
+            if (!ctx.CheckPerms("mgmt.radio", out var cores))
+                return;
+
+            GlobalCache.Instance.Stations.Add(new RadioStation
+            {
+                Name = radioName,
+                StreamUrl = streamUrl,
+                DataUrl = dataUrl
+            });
+
+            ConfigManager.Save();
+
+            await ctx.RespondAsync(new DiscordEmbedBuilder()
+                .WithAuthor("Succesfully added a new radio station")
+                .AddField("Station Name", radioName, true)
+                .AddField("Station URL", streamUrl, true)
+                .AddField("Station Data URL", dataUrl, true)
+                .MakeSuccess());
+        }
+
+        [Command("removeradio")]
+        [Aliases("rr")]
+        public async Task RemoveRadio(CommandContext ctx, [RemainingText] string radioName)
+        {
+            if (!ctx.CheckPerms("mgmt.radio", out var cores))
+                return;
+
+            var station = GlobalCache.Instance.Stations.FirstOrDefault(s => s.Name.ToLower().Contains(radioName.ToLower()));
+
+            if (station == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Failed to find that radio station.")
+                    .MakeError());
+
+                return;
+            }
+
+            int index = GlobalCache.Instance.Stations.IndexOf(station);
+
+            GlobalCache.Instance.Stations.RemoveAt(index);
+
+            ConfigManager.Save();
+
+            await ctx.RespondAsync(new DiscordEmbedBuilder()
+                .WithAuthor("Succesfully removed radio station.")
+                .AddField("Station Name", station.Name, true)
+                .AddField("Station URL", station.StreamUrl, true)
+                .MakeSuccess());
+        }
+
+        [Command("listradio")]
+        [Aliases("lr")]
+        public async Task ListRadio(CommandContext ctx)
+        {
+            List<Page> pages = PageParser.SplitToPages(GlobalCache.Instance.Stations, new DiscordEmbedBuilder()
+                .WithAuthor($"List of added radio stations ({GlobalCache.Instance.Stations.Count}):")
+                .MakeInfo());
+
+            await ctx.Channel.SendPaginatedMessageAsync(ctx.User, pages, PaginationBehaviour.WrapAround, ButtonPaginationBehavior.Ignore);
+        }
+
+        [Command("radioplay")]
+        [Aliases("rp")]
+        [RequireGuild]
+        public async Task RadioPlay(CommandContext ctx, [RemainingText]string radioName)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (ctx.Member.VoiceState == null || ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            RadioStation radioStation = GlobalCache.Instance.Stations.FirstOrDefault(x => x.Name.ToLower().Contains(radioName.ToLower()));
+
+            if (radioStation == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Failed to find specified radio station.")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerRadioCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("A radio station is currently playing.")
+                    .MakeError());
+
+                return;
+            }
+
+            await coreCollection.ServerRadioCore.JoinAsync(ctx.Member.VoiceState.Channel, ctx.Channel);
+            await coreCollection.ServerRadioCore.PlayAsync(radioStation);
+        }
+
+
+        [Command("radiojoin")]
+        [Aliases("rj")]
+        [RequireGuild]
+        public async Task RadioJoin(CommandContext ctx, [RemainingText] string radioName)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (ctx.Member.VoiceState == null || ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerRadioCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("A radio station is currently playing.")
+                    .MakeError());
+
+                return;
+            }
+
+            await coreCollection.ServerRadioCore.JoinAsync(ctx.Member.VoiceState.Channel, ctx.Channel);
+        }
+
+
+        [Command("radioleave")]
+        [Aliases("rl")]
+        [RequireGuild]
+        public async Task RadioLeave(CommandContext ctx, [RemainingText] string radioName)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (ctx.Member.VoiceState == null || ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerRadioCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("A radio station is currently playing.")
+                    .MakeError());
+
+                return;
+            }
+
+            await coreCollection.ServerRadioCore.DisconnectAsync();
+        }
+
+        [Command("radiopause")]
+        [Aliases("rpa")]
+        [RequireGuild]
+        public async Task RadioPause(CommandContext ctx, [RemainingText] string radioName)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (ctx.Member.VoiceState == null || ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerRadioCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("A radio station is currently playing.")
+                    .MakeError());
+
+                return;
+            }
+
+            await coreCollection.ServerRadioCore.PauseAsync();
+        }
+
+        [Command("radioresume")]
+        [Aliases("rres")]
+        [RequireGuild]
+        public async Task RadioResume(CommandContext ctx, [RemainingText] string radioName)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (ctx.Member.VoiceState == null || ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerRadioCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("A radio station is currently playing.")
+                    .MakeError());
+
+                return;
+            }
+
+            await coreCollection.ServerRadioCore.ResumeAsync();
+        }
+
+        [Command("radiostop")]
+        [Aliases("rs")]
+        [RequireGuild]
+        public async Task RadioStop(CommandContext ctx, [RemainingText] string radioName)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (ctx.Member.VoiceState == null || ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerRadioCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("A radio station is currently playing.")
+                    .MakeError());
+
+                return;
+            }
+
+            await coreCollection.ServerRadioCore.StopAsync();
         }
 
         [Command("join")]

@@ -52,7 +52,7 @@ namespace Polaris.Discord
     {
         static DiscordNetworkHandlers()
         {
-            Log.JoinCategory("discordnet");
+            Log.JoinCategory("discord");
         }
 
         private static bool HasLoaded;
@@ -61,6 +61,7 @@ namespace Polaris.Discord
         public static CommandsNextExtension CommandsNextExtension;
         public static InteractivityExtension InteractivityExtension;
         public static LavalinkExtension LavalinkExtension;
+        public static VoiceNextExtension VoiceNextExtension;
 
         public static List<ServerCore> ServerCores = new List<ServerCore>();
 
@@ -99,136 +100,164 @@ namespace Polaris.Discord
 
         public static async Task InstallAsync()
         {
-            if (GlobalConfig.Instance.Token == null || GlobalConfig.Instance.Token.Length <= 0)
+            try
             {
-                Log.Error($"You need to set the bot token with the -token launch argument! Exiting in 10 seconds ..");
-                await Task.Delay(10000);
-                Program.Kill("Missing bot token.");
-            }
-
-            if (ConfigManager.HasAnnouncement)
-            {
-                Log.Info("Pending announcement loaded.");
-            }
-
-            Log.Info("Installing Discord Network Handlers ..");
-
-            GlobalClient = new DiscordClient(new DiscordConfiguration
-            {
-                AlwaysCacheMembers = true,
-                Intents = DiscordIntents.All,
-                LogTimestampFormat = GlobalConfig.Instance.LogTimestampFormat,
-                MessageCacheSize = 8096,
-                MinimumLogLevel = Microsoft.Extensions.Logging.LogLevel.Error,
-                Token = Encoding.UTF32.GetString(GlobalConfig.Instance.Token),
-                TokenType = TokenType.Bot
-            });
-
-            GlobalClient.GuildAvailable += async (x, e) =>
-            {
-                if (ConfigManager.ConfigList.TryGetValue(e.Guild.Id, out var config))
+                if (GlobalConfig.Instance.Token == null || GlobalConfig.Instance.Token.Length <= 0)
                 {
-                    Log.Info($"Discovered a known server. {e.Guild.Id} >> {e.Guild.Name}");
-
-                    var score = new ServerCore();
-
-                    await score.LoadAsync(config, x, e.Guild);
-
-                    ServerCores.Add(score);
-
-                    if (!HasLoaded)
-                        await OnReady();
+                    Log.Error($"You need to set the bot token with the -token launch argument! Exiting in 10 seconds ..");
+                    await Task.Delay(10000);
+                    Program.Kill("Missing bot token.");
                 }
-                else
+
+                if (ConfigManager.HasAnnouncement)
                 {
-                    Log.Info($"A new was server discovered! {e.Guild.Id} >> {e.Guild.Name}");
-
-                    var core = new ServerCore();
-
-                    await core.LoadAsync(x, e.Guild);
-
-                    ServerCores.Add(core);
-
-                    if (!HasLoaded)
-                        await OnReady();
+                    Log.Info("Pending announcement loaded.");
                 }
-            };
 
-            CommandsNextExtension = GlobalClient.UseCommandsNext(new CommandsNextConfiguration
-            {
-                UseDefaultCommandHandler = false
-            });
+                Log.Info("Installing Discord Network Handlers ..");
 
-            InteractivityExtension = GlobalClient.UseInteractivity(new InteractivityConfiguration
-            {
-
-            });
-
-            LavalinkExtension = GlobalClient.UseLavalink();
-
-            CommandsNextExtension.RegisterCommands<GlobalCommandCore>();
-
-            CommandsNextExtension.CommandExecuted += (x, e) =>
-            {
-                Log.Verbose($"Command executed! {e.Command.Name} - {e.Context.RawArgumentString}");
-
-                return Task.CompletedTask;
-            };
-
-            CommandsNextExtension.CommandErrored += async (x, e) =>
-            {
-                Log.Error($"Command errored! {e.Exception} ({e.Command.Name} - {e.Context.RawArgumentString})");
-
-                if (e.Exception != null)
+                GlobalClient = new DiscordClient(new DiscordConfiguration
                 {
-                    if (e.Exception is MissingArgumentsException)
+                    AlwaysCacheMembers = true,
+                    Intents = DiscordIntents.All,
+                    LogTimestampFormat = GlobalConfig.Instance.LogTimestampFormat,
+                    MessageCacheSize = 8096,
+                    MinimumLogLevel = Microsoft.Extensions.Logging.LogLevel.Information,
+                    Token = Encoding.UTF32.GetString(GlobalConfig.Instance.Token),
+                    TokenType = TokenType.Bot,
+                    LoggerFactory = new Logging.DSharpLogger()
+                });
+
+                GlobalClient.GuildAvailable += async (x, e) =>
+                {
+                    try
                     {
-                        await e.Context.Channel.SendMessageAsync(new DiscordEmbedBuilder()
-                            .WithAuthor("Command Failed")
-                            .WithTitle("It seems like you forgot some arguments.")
-                            .AddField("Command Usage", $"", false)
-                            .AddField("Arguments", $"", false)
-                            .MakeError());
-                    }
-                    else
-                    {
-                        await e.Context.Channel.SendMessageAsync(new DiscordEmbedBuilder()
-                            .WithAuthor("Command Error")
-                            .WithTitle("Unknown Error")
-                            .WithDescription(e.Exception.Message)
-                            .MakeError());
-                    }
-                }
-            };
+                        if (ConfigManager.ConfigList.TryGetValue(e.Guild.Id, out var config))
+                        {
+                            Log.Info($"Discovered a known server. {e.Guild.Id} >> {e.Guild.Name}");
 
-            await GlobalClient.ConnectAsync();
-            await GlobalClient.InitializeAsync();
+                            var score = new ServerCore();
+
+                            await score.LoadAsync(config, ConfigManager.CacheList.TryGetValue(e.Guild.Id, out var cache) ? cache : new ServerCache(), x, e.Guild);
+
+                            ServerCores.Add(score);
+
+                            if (!HasLoaded)
+                                await OnReady();
+                        }
+                        else
+                        {
+                            Log.Info($"A new was server discovered! {e.Guild.Id} >> {e.Guild.Name}");
+
+                            var core = new ServerCore();
+
+                            await core.LoadAsync(x, e.Guild);
+
+                            ServerCores.Add(core);
+
+                            if (!HasLoaded)
+                                await OnReady();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex);
+                    }
+                };
+
+                CommandsNextExtension = GlobalClient.UseCommandsNext(new CommandsNextConfiguration
+                {
+                    UseDefaultCommandHandler = false
+                });
+
+                InteractivityExtension = GlobalClient.UseInteractivity(new InteractivityConfiguration
+                {
+
+                });
+
+                VoiceNextExtension = GlobalClient.UseVoiceNext(new VoiceNextConfiguration
+                {
+                    AudioFormat = new AudioFormat(48000, 2, VoiceApplication.LowLatency)
+                });
+
+                LavalinkExtension = GlobalClient.UseLavalink();
+
+                CommandsNextExtension.RegisterCommands<GlobalCommandCore>();
+
+                CommandsNextExtension.CommandExecuted += (x, e) =>
+                {
+                    Log.Verbose($"Command executed! {e.Command.Name} - {e.Context.RawArgumentString}");
+
+                    return Task.CompletedTask;
+                };
+
+                CommandsNextExtension.CommandErrored += async (x, e) =>
+                {
+                    Log.Error($"Command errored! {e.Exception} ({e.Command.Name} - {e.Context.RawArgumentString})");
+
+                    if (e.Exception != null)
+                    {
+                        if (e.Exception is MissingArgumentsException)
+                        {
+                            await e.Context.Channel.SendMessageAsync(new DiscordEmbedBuilder()
+                                .WithAuthor("Command Failed")
+                                .WithTitle("It seems like you forgot some arguments.")
+                                .AddField("Command Usage", $"", false)
+                                .AddField("Arguments", $"", false)
+                                .MakeError());
+                        }
+                        else
+                        {
+                            await e.Context.Channel.SendMessageAsync(new DiscordEmbedBuilder()
+                                .WithAuthor("Command Error")
+                                .WithTitle("Unknown Error")
+                                .WithDescription(e.Exception.Message)
+                                .MakeError());
+                        }
+                    }
+                };
+
+                await GlobalClient.ConnectAsync();
+                await GlobalClient.InitializeAsync();
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex);
+            }
         }
 
         public static async Task OnReady()
         {
-            if (GlobalConfig.Instance.BotStatus == "default" || string.IsNullOrEmpty(GlobalConfig.Instance.BotStatus))
-                await GlobalClient.UpdateStatusAsync(new DiscordActivity
-                {
-                    ActivityType = ActivityType.Playing,
-                    Name = $"Use {GlobalConfig.Instance.DefaultPrefix}help",
-                }, UserStatus.Idle);
-            else
-                await GlobalClient.UpdateStatusAsync(new DiscordActivity
-                {
-                    ActivityType = ActivityType.Playing,
-                    Name = GlobalConfig.Instance.BotStatus
-                }, UserStatus.Idle);
+            try
+            {
+                if (GlobalConfig.Instance.BotStatus == "default" || string.IsNullOrEmpty(GlobalConfig.Instance.BotStatus))
+                    await GlobalClient.UpdateStatusAsync(new DiscordActivity
+                    {
+                        ActivityType = ActivityType.Playing,
+                        Name = $"Use {GlobalConfig.Instance.DefaultPrefix}help",
+                    }, UserStatus.Idle);
+                else
+                    await GlobalClient.UpdateStatusAsync(new DiscordActivity
+                    {
+                        ActivityType = ActivityType.Playing,
+                        Name = GlobalConfig.Instance.BotStatus
+                    }, UserStatus.Idle);
 
-            HasLoaded = true;
+                HasLoaded = true;
 
-            Log.Info("Ready!");
+                Log.Info("Ready!");
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex);
+            }
         }
 
         public static void Kill()
         {
             GlobalClient.DisconnectAsync();
             GlobalClient.Dispose();
+            GlobalClient = null;
         }
     }
 }

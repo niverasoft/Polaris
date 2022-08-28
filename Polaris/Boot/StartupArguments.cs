@@ -178,6 +178,102 @@ namespace Polaris.Boot
 
                                 break;
                             }
+
+                        case "allowdiscordlog":
+                            {
+                                if (bool.TryParse(paramValue, out bool allow))
+                                {
+                                    GlobalConfig.Instance.AllowDiscordLogOutput = allow;
+
+                                    Log.Info($"Updated the value of AllowDiscordLogOutput: {allow}; saving changes.");
+
+                                    ConfigManager.Save();
+                                }
+                                else
+                                {
+                                    Log.Error($"Failed to parse {paramValue} to a boolean.");
+                                }
+
+                                break;
+                            }
+
+                        case "discordlogid":
+                            {
+                                if (ulong.TryParse(paramValue, out ulong id))
+                                {
+                                    GlobalConfig.Instance.DiscordLogOutputChannelId = id;
+
+                                    Log.Info($"Updated the value of DiscordLogOutputChannelId: {id}; saving changes.");
+
+                                    ConfigManager.Save();
+                                }
+                                else
+                                {
+                                    Log.Error($"Failed to parse {paramValue} to an ulong.");
+                                }
+
+                                break;
+                            }
+
+                        case "discordmentionids":
+                            {
+                                foreach (var idstr in paramValue.Split(','))
+                                {
+                                    if (ulong.TryParse(idstr, out ulong id))
+                                    {
+                                        if (!GlobalConfig.Instance.DiscordPingIds.Contains(id))
+                                            break;
+
+                                        GlobalConfig.Instance.DiscordPingIds.Add(id);
+
+                                        Log.Info($"Updated the value of DiscordPingIds: {id}; saving changes.");
+
+                                        ConfigManager.Save();
+                                    }
+                                    else
+                                    {
+                                        Log.Error($"Failed to parse {paramValue} to an ulong.");
+                                    }
+                                }
+
+                                break;
+                            }
+
+                        case "allowlavalinkstart":
+                            {
+                                if (bool.TryParse(paramValue, out bool allow))
+                                {
+                                    GlobalConfig.Instance.LavalinkAtStart = allow;
+
+                                    Log.Info($"Updated the value of LavalinkAtStart: {allow}; saving changes.");
+
+                                    ConfigManager.Save();
+                                }
+                                else
+                                {
+                                    Log.Error($"Failed to parse {paramValue} to a boolean.");
+                                }
+
+                                break;
+                            }
+
+                        case "checkdependencypackages":
+                            {
+                                if (bool.TryParse(paramValue, out bool check))
+                                {
+                                    GlobalConfig.Instance.CheckPackages = check;
+
+                                    Log.Info($"Updated the value of CheckPackages: {check}; saving changes.");
+
+                                    ConfigManager.Save();
+                                }
+                                else
+                                {
+                                    Log.Error($"Failed to parse {paramValue} to a boolean.");
+                                }
+
+                                break;
+                            }
                     }
                 }
             }

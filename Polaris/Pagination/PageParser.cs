@@ -51,6 +51,8 @@ namespace Polaris.Pagination
         static PageParser()
         {
             AddParser(new LavalinkTrackParser());
+            AddParser(new MusicTrackParser());
+            AddParser(new RadioStationParser());
         }
 
         public static void AddParser(IPageParserBase parser)

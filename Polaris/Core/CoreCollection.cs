@@ -11,11 +11,12 @@ namespace Polaris.Core
     {
         public static List<CoreCollection> ActiveCores = new List<CoreCollection>();
 
-        public CoreCollection(ServerCore serverCore, ServerConfig serverConfig, ulong serverID)
+        public CoreCollection(ServerCore serverCore, ServerConfig serverConfig, ServerCache serverCache, ulong serverID)
         {
             ServerId = serverID;
             ServerConfig = serverConfig;
             ServerCore = serverCore;
+            ServerCache = serverCache;
 
             ServerAdminCore = new ServerAdminCore();
             ServerDailyCore = new ServerDailyCore();
@@ -23,9 +24,8 @@ namespace Polaris.Core
             ServerFunCore = new ServerFunCore();
             ServerLevelsCore = new ServerLevelsCore();
             ServerLogCore = new ServerLogCore();
-            ServerMusicCore = new ServerMusicCore();
             ServerPermsCore = new ServerPermsCore();
-            ServerRadioCore = new ServerRadioCore();
+            ServerRadioCore = new ServerRadioCore(serverID);
             ServerReactionRolesCore = new ServerReactionRolesCore();
             ServerTextToSpeechCore = new ServerTextToSpeechCore();
             ServerUtilityCore = new ServerUtilityCore();
@@ -37,6 +37,7 @@ namespace Polaris.Core
         public ulong ServerId { get; set; }
 
         public ServerConfig ServerConfig { get; set; }
+        public ServerCache ServerCache { get; set; }
         public ServerCore ServerCore { get; set; }
         public ServerAdminCore ServerAdminCore { get; set; }
         public ServerDailyCore ServerDailyCore { get; set; }
@@ -44,7 +45,6 @@ namespace Polaris.Core
         public ServerFunCore ServerFunCore { get; set; }
         public ServerLevelsCore ServerLevelsCore { get; set; }
         public ServerLogCore ServerLogCore { get; set; }
-        public ServerMusicCore ServerMusicCore { get; set; }
         public ServerPermsCore ServerPermsCore { get; set; }
         public ServerRadioCore ServerRadioCore { get; set; }
         public ServerReactionRolesCore ServerReactionRolesCore { get; set; }
@@ -54,12 +54,7 @@ namespace Polaris.Core
 
         public static CoreCollection Get(ulong server)
         {
-            var core = ActiveCores.FirstOrDefault(x => x.ServerId == server);
-
-            if (core == null)
-                throw new KeyNotFoundException("server");
-
-            return core;
+            return ActiveCores.FirstOrDefault(x => x.ServerId == server);
         }
 
         public static CoreCollection Get(CommandContext ctx)

@@ -7,11 +7,15 @@ using Polaris.Properties;
 using Polaris.Config;
 using Polaris.Discord;
 using Polaris.Plugins;
+using Polaris.Logging;
 
 namespace Polaris.Boot
 {
     public static class Program
     {
+        public static PolarisLogger PolarisLogger { get; set; }
+        public static DiscordLogger DiscordLogger { get; set; }
+
         static Program()
         {
             Log.JoinCategory("main");
@@ -107,11 +111,11 @@ namespace Polaris.Boot
 
         public static void LoadNivera()
         {
-            LibConfig libConfig = new LibConfig(null, true, true, false, true);
+            DiscordLogger = new DiscordLogger();
+            PolarisLogger = new PolarisLogger(new Nivera.Logging.SystemConsoleLogger());
+            PolarisLogger.Loggers.Add(DiscordLogger);
 
-            libConfig.UseSystemLogger();
-
-            LibProperties.Load(libConfig);
+            LibProperties.Load(new LibConfig(PolarisLogger, true, true, false, true));
         }
     }
 }
