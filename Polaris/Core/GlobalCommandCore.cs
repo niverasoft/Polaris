@@ -45,6 +45,8 @@ using Polaris.Properties;
 using Nivera;
 using Nivera.Utils;
 using Polaris.Pagination;
+using Polaris.CustomCommands;
+using Open.Collections;
 
 namespace Polaris.Core
 {
@@ -108,6 +110,153 @@ namespace Polaris.Core
 
             await ctx.RespondAsync(new DiscordEmbedBuilder()
                 .WithAuthor($"Done! The prefix for this server is now `{prefix}`")
+                .MakeSuccess());
+        }
+
+        [Command("viewcommands")]
+        [Aliases("vcmds")]
+        public async Task ViewCommands(CommandContext ctx)
+        {
+            var commands = CustomCommandManager.GetCommandsForGuild(ctx.Guild.Id, false);
+
+            if (commands.Count < 0)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("There are no custom commands available for this server.")
+                    .MakeSuccess());
+
+                return;
+            }
+
+            await ctx.Channel.SendPaginatedMessageAsync(ctx.User, PageParser.SplitToPages(commands, new DiscordEmbedBuilder()
+                .WithAuthor("Custom Commands")
+                .MakeInfo()));
+        }
+
+        [Command("createcommand")]
+        [Aliases("ccmd")]
+        public async Task CreateCommand(CommandContext ctx)
+        {
+            if (!ctx.CheckPerms("cc.create", out var cores))
+                return;
+
+            await ctx.RespondAsync(new DiscordEmbedBuilder()
+                .WithAuthor("Alright, let's create a new command. First, type the name of your command. It will be executed by it.")
+                .MakeSuccess());
+
+            var result = await ctx.Channel.GetNextMessageAsync(ctx.User);
+
+            if (result.TimedOut)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Sorry, this operation timed out.")
+                    .MakeError());
+
+                return;
+            }
+
+            var message = result.Result;
+
+            string cmdName = message.Content.Split(' ')[0];
+
+            await message.RespondAsync(new DiscordEmbedBuilder()
+                .WithAuthor($"You chose {cmdName} as the name of your command. Now set it's description - shortly describe what it does or use \"-\" for a blank description.")
+                .MakeSuccess());
+
+            result = await ctx.Channel.GetNextMessageAsync(ctx.User);
+
+            if (result.TimedOut)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Sorry, this operation timed out.")
+                    .MakeError());
+
+                return;
+            }
+
+            message = result.Result;
+
+            string cmdDesc = message.Content;
+
+            await message.RespondAsync(new DiscordEmbedBuilder()
+                .WithAuthor($"You chose this as the command's description. Now let's set-up permissions that will be required for this command. You have to use " +
+                $"available command nodes of this bot! If you want to have more permissions, split them with a comma. Use \"everyone\" to enable this command for everyone.")
+                .WithDescription(cmdDesc)
+                .MakeSuccess());
+
+            result = await ctx.Channel.GetNextMessageAsync(ctx.User);
+
+            if (result.TimedOut)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Sorry, this operation timed out.")
+                    .MakeError());
+
+                return;
+            }
+
+            message = result.Result;
+
+            List<string> perms = PermsHelper.ProcessPermissions(message.Content);
+
+            await message.RespondAsync(new DiscordEmbedBuilder()
+                .WithAuthor("You chose these permissions for this command. Now, let's \"code\"! " +
+                "You will need to type the instructions of this command below, every instruction on it's own line.")
+                .WithDescription(string.Join(", ", perms))
+                .MakeSuccess());
+
+            result = await ctx.Channel.GetNextMessageAsync(ctx.User);
+
+            if (result.TimedOut)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Sorry, this operation timed out.")
+                    .MakeError());
+
+                return;
+            }
+
+            message = result.Result;
+
+            CustomCommandCompiler compiler = new CustomCommandCompiler();
+
+            await message.RespondAsync(new DiscordEmbedBuilder()
+                .WithAuthor($"Compiling ...")
+                .WithColor(ColorPicker.SuccessColor)
+                .AddEmoteAuthor(EmotePicker.LoadingGif));
+
+            var compResult = compiler.CompileCustomCommand(new CustomCommand
+            {
+                Author = ctx.Member.Mention,
+                Description = cmdDesc,
+                Guild = ctx.Guild.Id,
+                IsGlobal = false,
+                Name = cmdName,
+                Source = message.Content.Split(new string[]
+                {
+                    "\r",
+                    "\n",
+                    "\r\n"
+                }, StringSplitOptions.RemoveEmptyEntries)             
+            });
+
+            if (compResult.Status != CompilerStatus.CompilerSuccess)
+            {
+                await message.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("An error occured while compiling your command!")
+                    .AddField("Error ID", compResult.ErrorId, true)
+                    .AddField("Error Reason", compResult.ErrorReason, true)
+                    .AddField("Line Number", (compResult.ErrorIndex + 1).ToString(), true)
+                    .AddField("Line", compResult.ParseLine, true)
+                    .MakeError());
+
+                return;
+            }
+
+            CustomCommandManager.AddCommand(compResult.Command);
+
+            await message.RespondAsync(new DiscordEmbedBuilder()
+                .WithAuthor("Succesfully compiled your command! You should try it out tho.")
                 .MakeSuccess());
         }
 

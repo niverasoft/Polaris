@@ -14,6 +14,7 @@ namespace Polaris.Helpers
     {
         private static Regex RoleRegex { get; }
         private static Regex UserRegex { get; }
+        private static Regex ChannelRegex { get; }
         private static Regex URLRegex { get; }
 
         public const string NewLine = "\n";
@@ -22,6 +23,7 @@ namespace Polaris.Helpers
         {
             RoleRegex = new Regex(@"^<@&(\d+?)>$", RegexOptions.ECMAScript | RegexOptions.Compiled);
             UserRegex = new Regex(@"^<@\!?(\d+?)>$", RegexOptions.ECMAScript | RegexOptions.Compiled);
+            ChannelRegex = new Regex(@"^<#(\d+?)>$", RegexOptions.ECMAScript | RegexOptions.Compiled);
             URLRegex = new Regex(@"(http|ftp|https):\/\/([\w\-_]+(?:(?:\.[\w\-_]+)+))([\w\-\.,@?^=%&amp;:/~\+#]*[\w\-\@?^=%&amp;/~\+#])?");
         }
 
@@ -73,6 +75,27 @@ namespace Polaris.Helpers
                 xr.Name.Equals(value, StringComparison.InvariantCultureIgnoreCase));
 
             return rol;
+        }
+
+        public static DiscordChannel FindChannel(string value, DiscordGuild discordGuild)
+        {
+
+            if (ulong.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cid))
+            {
+                return discordGuild.GetChannel(cid);
+            }
+
+            var m = ChannelRegex.Match(value);
+
+            if (m.Success && ulong.TryParse(m.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out cid))
+            {
+                return discordGuild.GetChannel(cid);
+            }
+
+            var chan = discordGuild.Channels.Values.FirstOrDefault(xr =>
+                xr.Name.Equals(value, StringComparison.InvariantCultureIgnoreCase));
+
+            return chan;
         }
 
         public static List<DiscordRole> FindRoles(string value, CommandContext ctx)

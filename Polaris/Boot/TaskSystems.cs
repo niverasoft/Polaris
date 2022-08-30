@@ -39,6 +39,8 @@ namespace Polaris.Boot
             
             x =>
             {
+                Log.Verbose($"TaskWatchService Reporting");
+
                 bool isBehind = IsBehind();
 
                 if (IsBehind())

@@ -69,7 +69,10 @@ namespace Polaris.Entities
             {
                 if (guild.Members.ContainsKey(Id) && !ServerNicknames.ContainsValue(guild.Members[Id].Nickname))
                 {
-                    ServerNicknames.Add(guild.Id, guild.Members[Id].Nickname);
+                    if (!ServerNicknames.ContainsKey(guild.Id))
+                        ServerNicknames.Add(guild.Id, guild.Members[Id].Nickname);
+                    else
+                        ServerNicknames[guild.Id] = guild.Members[Id].Nickname;
                 }
             }
         }

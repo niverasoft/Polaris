@@ -38,6 +38,7 @@ namespace Polaris.Helpers
         public static readonly string WaveHandEmote = "👋";
         public static readonly string PopEmote = "💥";
         public static readonly string GearEmote = "⚙️";
+        public static readonly string LoadingGif = "<a:polarisLoad:1014229111402663966>";
     }
 
     public static class NumberEmotes

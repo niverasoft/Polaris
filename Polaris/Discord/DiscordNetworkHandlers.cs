@@ -177,7 +177,9 @@ namespace Polaris.Discord
 
                 VoiceNextExtension = GlobalClient.UseVoiceNext(new VoiceNextConfiguration
                 {
-                    AudioFormat = new AudioFormat(48000, 2, VoiceApplication.LowLatency)
+                    AudioFormat = new AudioFormat(48000, 2, VoiceApplication.LowLatency),
+                    EnableIncoming = true,
+                    PacketQueueSize = 1024
                 });
 
                 LavalinkExtension = GlobalClient.UseLavalink();

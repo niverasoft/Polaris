@@ -12,6 +12,7 @@ using Polaris.Discord;
 
 using Nivera;
 using Polaris.Entities;
+using Polaris.CustomCommands;
 
 namespace Polaris.Core
 {
@@ -99,12 +100,20 @@ namespace Polaris.Core
 
         public void InstallEventHandlers()
         {
-            Client.MessageCreated += (x, e) =>
+            Client.MessageCreated += async (x, e) =>
             {
                 try
                 {
                     if (e.Guild.Id != Guild.Id)
-                        return Task.CompletedTask;
+                        return;
+
+                    if (CustomCommandManager.TryGetCommand(CoreCollection, e, out var command, out var prefixStr))
+                    {
+                        if (await CustomCommandManager.TryInvokeCommand(prefixStr, e, command))
+                        {
+                            return;
+                        }
+                    }
 
                     var cnext = DiscordNetworkHandlers.GlobalClient.GetCommandsNext();
                     var msg = e.Message;
@@ -112,26 +121,24 @@ namespace Polaris.Core
                     var cmdStart = msg.GetStringPrefixLength(CoreCollection.ServerConfig.Prefix.ToString());
 
                     if (cmdStart == -1)
-                        return Task.CompletedTask;
+                        return;
 
                     var prefix = msg.Content.Substring(0, cmdStart);
                     var cmdString = msg.Content.Substring(cmdStart);
 
-                    var command = cnext.FindCommand(cmdString, out var args);
+                    var ccommand = cnext.FindCommand(cmdString, out var args);
 
                     if (command == null)
-                        return Task.CompletedTask;
+                        return;
 
-                    var ctx = cnext.CreateContext(msg, prefix, command, args);
+                    var ctx = cnext.CreateContext(msg, prefix, ccommand, args);
 
-                    Task.Run(async () => await cnext.ExecuteCommandAsync(ctx));
+                    await cnext.ExecuteCommandAsync(ctx);
                 }
                 catch (Exception ex)
                 {
                     Log.Error(ex);
                 }
-
-                return Task.CompletedTask;
             };
         }
 

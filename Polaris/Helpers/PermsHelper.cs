@@ -31,6 +31,19 @@ namespace Polaris.Helpers
             {
                 "utils.giveaways"
             },
+
+            ["CustomCommands"] = new List<string>()
+            {
+                "cc.create",
+                "cc.remove",
+                "cc.edit",
+                "cc.publish"
+            },
+
+            ["Music"] = new List<string>()
+            {
+                "dj"
+            }
         };
 
         public static List<string> ProcessPermissions(string value)

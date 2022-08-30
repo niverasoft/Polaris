@@ -8,6 +8,7 @@ using Polaris.Config;
 using Polaris.Discord;
 using Polaris.Plugins;
 using Polaris.Logging;
+using Polaris.CustomCommands;
 
 namespace Polaris.Boot
 {
@@ -15,6 +16,7 @@ namespace Polaris.Boot
     {
         public static PolarisLogger PolarisLogger { get; set; }
         public static DiscordLogger DiscordLogger { get; set; }
+        public static FileLogger FileLogger { get; set; }
 
         static Program()
         {
@@ -83,6 +85,8 @@ namespace Polaris.Boot
 
                 await BootLoader.Commence(args);
 
+                CustomCommandManager.LoadCommands();
+
                 Log.Info("Welcome to Polaris!");
 
                 Console.WriteLine(Resources.Logo);
@@ -112,8 +116,10 @@ namespace Polaris.Boot
         public static void LoadNivera()
         {
             DiscordLogger = new DiscordLogger();
+            FileLogger = new FileLogger();
             PolarisLogger = new PolarisLogger(new Nivera.Logging.SystemConsoleLogger());
             PolarisLogger.Loggers.Add(DiscordLogger);
+            PolarisLogger.Loggers.Add(FileLogger);
 
             LibProperties.Load(new LibConfig(PolarisLogger, true, true, false, true));
         }
