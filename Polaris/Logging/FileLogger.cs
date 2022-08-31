@@ -1,5 +1,6 @@
 ﻿using Nivera.Logging;
 
+using System.Threading;
 using System.IO;
 using System;
 
@@ -17,11 +18,15 @@ namespace Polaris.Logging
 
         public FileLogger()
         {
+            if (!Directory.Exists($"{Directory.GetCurrentDirectory()}/Logs"))
+                Directory.CreateDirectory($"{Directory.GetCurrentDirectory()}/Logs");
+
             string dateStr = DateTime.Now.ToString("O").Replace("-", "_").Replace(":", "_");
 
             dateStr = StringHelpers.RemoveAfterIndex(dateStr, dateStr.IndexOf("."));
-
+            
             _stream = File.OpenWrite($"{Directory.GetCurrentDirectory()}/Logs/{dateStr}.txt");
+            _writer = new StreamWriter(_stream);
         }
 
         ~FileLogger()

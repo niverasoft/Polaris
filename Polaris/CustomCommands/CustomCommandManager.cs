@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 
 using Polaris.Core;
 using Polaris.Discord;
+using Polaris.Config;
 
 namespace Polaris.CustomCommands
 {
@@ -20,9 +21,13 @@ namespace Polaris.CustomCommands
         private static List<CustomCommand> _loadedCommands = new List<CustomCommand>();
         private static List<CustomCommand> _erroredCommands = new List<CustomCommand>();
 
+        public static bool IsEnabled;
+
         static CustomCommandManager()
         {
             Log.JoinCategory("customcommands");
+
+            IsEnabled = GlobalConfig.Instance.AllowCustomCommands;
 
             SaveCommand(null);
         }

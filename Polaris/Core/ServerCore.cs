@@ -49,11 +49,9 @@ namespace Polaris.Core
 
                 Log.Info($"Caching Discord members for {guild.Name}");
 
-                CachedDiscordMember.Cache(Guild.CurrentMember);
-
                 foreach (var member in guild.Members.Values)
                 {
-                    CachedDiscordMember.Cache(member);
+                    Task.Run(() => CachedDiscordMember.Cache(member));
                 }
             }
             catch (Exception ex)
@@ -85,11 +83,9 @@ namespace Polaris.Core
 
                 Log.Info($"Caching Discord members for {guild.Name}");
 
-                CachedDiscordMember.Cache(Guild.CurrentMember);
-
                 foreach (var member in guild.Members.Values)
                 {
-                    CachedDiscordMember.Cache(member);
+                    Task.Run(() => CachedDiscordMember.Cache(member));
                 }
             }
             catch (Exception ex)
@@ -107,11 +103,14 @@ namespace Polaris.Core
                     if (e.Guild.Id != Guild.Id)
                         return;
 
-                    if (CustomCommandManager.TryGetCommand(CoreCollection, e, out var command, out var prefixStr))
+                    if (CustomCommandManager.IsEnabled)
                     {
-                        if (await CustomCommandManager.TryInvokeCommand(prefixStr, e, command))
+                        if (CustomCommandManager.TryGetCommand(CoreCollection, e, out var ccommand, out var prefixStr))
                         {
-                            return;
+                            if (await CustomCommandManager.TryInvokeCommand(prefixStr, e, ccommand))
+                            {
+                                return;
+                            }
                         }
                     }
 
@@ -126,12 +125,12 @@ namespace Polaris.Core
                     var prefix = msg.Content.Substring(0, cmdStart);
                     var cmdString = msg.Content.Substring(cmdStart);
 
-                    var ccommand = cnext.FindCommand(cmdString, out var args);
+                    var command = cnext.FindCommand(cmdString, out var args);
 
                     if (command == null)
                         return;
 
-                    var ctx = cnext.CreateContext(msg, prefix, ccommand, args);
+                    var ctx = cnext.CreateContext(msg, prefix, command, args);
 
                     await cnext.ExecuteCommandAsync(ctx);
                 }

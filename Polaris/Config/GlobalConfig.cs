@@ -26,6 +26,7 @@ namespace Polaris.Config
         public bool AllowDiscordLogOutput { get; set; } = false;
         public bool LavalinkAtStart { get; set; } = false;
         public bool CheckPackages { get; set; }
+        public bool AllowCustomCommands { get; set; }
 
         public ulong DiscordLogOutputChannelId { get; set; } = 0;
 

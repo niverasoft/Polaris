@@ -1,36 +1,41 @@
-﻿using System;
-using System.Globalization;
-using System.Speech.Recognition;
-using System.Speech.AudioFormat;
-using System.IO;
+﻿using System.IO;
 
-using DSharpPlus.VoiceNext;
+using Syn.Speech.Api;
 
 namespace Polaris.VoiceCapture
 {
     public class SpeechRecognizer
     {
-        private SpeechRecognitionEngine _engine;
-        private Action<RecognitionResult> _onRecognizedPending;
+        private Configuration _config;
+        private StreamSpeechRecognizer _recognizer;
 
         public SpeechRecognizer()
         {
-            _engine = new SpeechRecognitionEngine(new CultureInfo("en-US"));
-            _engine.LoadGrammar(new DictationGrammar());
-            _engine.SpeechRecognized += OnRecognized;
+            if (!Directory.Exists($"{Directory.GetCurrentDirectory()}/SpeechData"))
+                Directory.CreateDirectory($"{Directory.GetCurrentDirectory()}/SpeechData");
+
+            _config = new Configuration
+            {
+                SampleRate = 48000,
+                AcousticModelPath = Directory.GetCurrentDirectory(),
+                DictionaryPath = Path.Combine(Directory.GetCurrentDirectory(), "cmudict-en-us.dict"),
+                LanguageModelPath = Path.Combine(Directory.GetCurrentDirectory(), "en-us.lm.dmp"),
+            };
+
+            _recognizer = new StreamSpeechRecognizer(_config);
         }
 
-        private void OnRecognized(object sender, SpeechRecognizedEventArgs ev)
+        public void StartRecognize(Stream inputStream)
         {
-            _onRecognizedPending(ev.Result);
-            _engine.RecognizeAsyncStop();
+            _recognizer.StartRecognition(inputStream);
         }
 
-        public void Recognize(AudioFormat audioFormat, Stream inputStream, Action<RecognitionResult> onRecognized)
+        public string StopRecognize()
         {
-            _onRecognizedPending = onRecognized;
-            _engine.SetInputToAudioStream(inputStream, new SpeechAudioFormatInfo(audioFormat.SampleRate, AudioBitsPerSample.Sixteen, audioFormat.ChannelCount == 2 ? AudioChannel.Stereo : AudioChannel.Mono));
-            _engine.RecognizeAsync(RecognizeMode.Multiple);
+            _recognizer.StopRecognition();
+            var result = _recognizer.GetResult();
+
+            return result == null ? null : result.GetHypothesis();
         }
     }
 }

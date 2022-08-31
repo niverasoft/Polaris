@@ -36,6 +36,7 @@ namespace Polaris.Boot
             TaskSystems.Kill();
             BootLoader.Kill();
             DiscordNetworkHandlers.Kill();
+            FileLogger.Kill();
 
             Environment.Exit(0);
         }

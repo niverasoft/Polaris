@@ -128,41 +128,46 @@ namespace Polaris.Discord
                     LoggerFactory = new Logging.DSharpLogger()
                 });
 
-                GlobalClient.GuildAvailable += async (x, e) =>
+                GlobalClient.GuildAvailable += (x, e) =>
                 {
-                    try
+                    Task.Run(async () =>
                     {
-                        if (ConfigManager.ConfigList.TryGetValue(e.Guild.Id, out var config))
+                        try
                         {
-                            Log.Info($"Discovered a known server. {e.Guild.Id} >> {e.Guild.Name}");
+                            if (ConfigManager.ConfigList.TryGetValue(e.Guild.Id, out var config))
+                            {
+                                Log.Info($"Discovered a known server. {e.Guild.Id} >> {e.Guild.Name}");
 
-                            var score = new ServerCore();
+                                var score = new ServerCore();
 
-                            await score.LoadAsync(config, ConfigManager.CacheList.TryGetValue(e.Guild.Id, out var cache) ? cache : new ServerCache(), x, e.Guild);
+                                await score.LoadAsync(config, ConfigManager.CacheList.TryGetValue(e.Guild.Id, out var cache) ? cache : new ServerCache(), x, e.Guild);
 
-                            ServerCores.Add(score);
+                                ServerCores.Add(score);
 
-                            if (!HasLoaded)
-                                await OnReady();
+                                if (!HasLoaded)
+                                    await OnReady();
+                            }
+                            else
+                            {
+                                Log.Info($"A new was server discovered! {e.Guild.Id} >> {e.Guild.Name}");
+
+                                var core = new ServerCore();
+
+                                await core.LoadAsync(x, e.Guild);
+
+                                ServerCores.Add(core);
+
+                                if (!HasLoaded)
+                                    await OnReady();
+                            }
                         }
-                        else
+                        catch (Exception ex)
                         {
-                            Log.Info($"A new was server discovered! {e.Guild.Id} >> {e.Guild.Name}");
-
-                            var core = new ServerCore();
-
-                            await core.LoadAsync(x, e.Guild);
-
-                            ServerCores.Add(core);
-
-                            if (!HasLoaded)
-                                await OnReady();
+                            Log.Error(ex);
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Error(ex);
-                    }
+                    });
+
+                    return Task.CompletedTask;
                 };
 
                 CommandsNextExtension = GlobalClient.UseCommandsNext(new CommandsNextConfiguration

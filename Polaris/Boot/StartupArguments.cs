@@ -274,6 +274,24 @@ namespace Polaris.Boot
 
                                 break;
                             }
+
+                        case "allowcustomcommands":
+                            {
+                                if (bool.TryParse(paramValue, out bool allow))
+                                {
+                                    GlobalConfig.Instance.AllowCustomCommands = allow;
+
+                                    Log.Info($"Updated the value of AllowCustomCommands: {allow}; saving changes.");
+
+                                    ConfigManager.Save();
+                                }
+                                else
+                                {
+                                    Log.Error($"Failed to parse {paramValue} to a boolean.");
+                                }
+
+                                break;
+                            }
                     }
                 }
             }
