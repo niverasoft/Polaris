@@ -13,6 +13,7 @@ using Polaris.Discord;
 using Nivera;
 using Polaris.Entities;
 using Polaris.CustomCommands;
+using Microsoft.VisualBasic;
 
 namespace Polaris.Core
 {
@@ -20,14 +21,14 @@ namespace Polaris.Core
     {
         public int CoreId { get; set; }
 
-        public DiscordClient Client;
-        public DiscordGuild Guild;
+        public DiscordClient Client { get; set; }
+        public DiscordGuild Guild { get; set; }
 
-        public CoreCollection CoreCollection;
+        public CoreCollection CoreCollection { get; set; }
 
-        public bool LastAnnouncementSent;
+        public bool LastAnnouncementSent { get; set; }
 
-        public async Task LoadAsync(ServerConfig serverConfig, ServerCache serverCache, DiscordClient client, DiscordGuild guild)
+        public void Load(ServerConfig serverConfig, ServerCache serverCache, DiscordClient client, DiscordGuild guild)
         {
             try
             {
@@ -43,9 +44,9 @@ namespace Polaris.Core
                 ConfigManager.Save();
 
                 InstallEventHandlers();
-
+              
                 if (!Program.DiscordLogger.ChannelFound && GlobalConfig.Instance.DiscordLogOutputChannelId != 0 && GlobalConfig.Instance.AllowDiscordLogOutput)
-                    await Program.DiscordLogger.FindChannel(GlobalConfig.Instance.DiscordLogOutputChannelId);
+                    Task.Run(async () => await Program.DiscordLogger.FindChannel(GlobalConfig.Instance.DiscordLogOutputChannelId));
 
                 Log.Info($"Caching Discord members for {guild.Name}");
 
@@ -60,7 +61,7 @@ namespace Polaris.Core
             }
         }
 
-        public async Task LoadAsync(DiscordClient client, DiscordGuild guild)
+        public void Load(DiscordClient client, DiscordGuild guild)
         {
             try
             {
@@ -79,7 +80,7 @@ namespace Polaris.Core
                 InstallEventHandlers();
 
                 if (!Program.DiscordLogger.ChannelFound && GlobalConfig.Instance.DiscordLogOutputChannelId != 0 && GlobalConfig.Instance.AllowDiscordLogOutput)
-                    await Program.DiscordLogger.FindChannel(GlobalConfig.Instance.DiscordLogOutputChannelId);
+                    Task.Run(async () => await Program.DiscordLogger.FindChannel(GlobalConfig.Instance.DiscordLogOutputChannelId));
 
                 Log.Info($"Caching Discord members for {guild.Name}");
 
@@ -96,48 +97,53 @@ namespace Polaris.Core
 
         public void InstallEventHandlers()
         {
-            Client.MessageCreated += async (x, e) =>
+            Client.MessageCreated += (x, e) =>
             {
-                try
+                Task.Run(async () =>
                 {
-                    if (e.Guild.Id != Guild.Id)
-                        return;
-
-                    if (CustomCommandManager.IsEnabled)
+                    try
                     {
-                        if (CustomCommandManager.TryGetCommand(CoreCollection, e, out var ccommand, out var prefixStr))
+                        if (e.Guild.Id != Guild.Id)
+                            return;
+
+                        var cmdIndex = e.Message.GetStringPrefixLength(CoreCollection.ServerConfig.Prefix);
+
+                        if (cmdIndex == -1)
+                            cmdIndex = e.Message.GetMentionPrefixLength(e.Guild.CurrentMember);
+
+                        if (cmdIndex == -1)
+                            return;
+
+                        var prefix = e.Message.Content.Substring(0, cmdIndex);
+                        var cmd = e.Message.Content.Substring(cmdIndex);
+                        var cmdObj = DiscordNetworkHandlers.CommandsNextExtension.FindCommand(cmd, out var args);
+
+                        if (cmdObj == null)
                         {
-                            if (await CustomCommandManager.TryInvokeCommand(prefixStr, e, ccommand))
+                            if (CustomCommandManager.IsEnabled && CustomCommandManager.TryGetCommand(cmd, out var customCommand))
                             {
+                                await CustomCommandManager.TryInvokeCommand(args ?? "", e.Guild.Members[e.Author.Id], e.Message, customCommand);
+
                                 return;
                             }
+
+                            return;
                         }
+
+                        await DiscordNetworkHandlers.CommandsNextExtension.ExecuteCommandAsync(
+                            DiscordNetworkHandlers.CommandsNextExtension.CreateContext(
+                                e.Message,
+                                prefix,
+                                cmdObj,
+                                args));
                     }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex);
+                    }
+                });
 
-                    var cnext = DiscordNetworkHandlers.GlobalClient.GetCommandsNext();
-                    var msg = e.Message;
-
-                    var cmdStart = msg.GetStringPrefixLength(CoreCollection.ServerConfig.Prefix.ToString());
-
-                    if (cmdStart == -1)
-                        return;
-
-                    var prefix = msg.Content.Substring(0, cmdStart);
-                    var cmdString = msg.Content.Substring(cmdStart);
-
-                    var command = cnext.FindCommand(cmdString, out var args);
-
-                    if (command == null)
-                        return;
-
-                    var ctx = cnext.CreateContext(msg, prefix, command, args);
-
-                    await cnext.ExecuteCommandAsync(ctx);
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex);
-                }
+                return Task.CompletedTask;
             };
         }
 

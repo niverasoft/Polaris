@@ -18,6 +18,7 @@ namespace Polaris.CustomCommands
         public string Description { get; set; }
         public string Author { get; set; }
         public string[] Source { get; set; }
+        public string[] Permissions { get; set; }
 
         public ulong Guild { get; set; }
 

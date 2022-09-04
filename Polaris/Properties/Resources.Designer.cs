@@ -84,7 +84,7 @@ namespace Polaris.Properties {
         }
         
         /// <summary>
-        ///   Vyhledá lokalizovaný řetězec podobný 1-0-4-A-TES.
+        ///   Vyhledá lokalizovaný řetězec podobný 1-0-5-A-TES.
         /// </summary>
         internal static string Version {
             get {

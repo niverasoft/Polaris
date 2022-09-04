@@ -1,0 +1,4 @@
+﻿[*.cs]
+
+# CS4014: Protože se toto volání neočekává, vykonávání aktuální metody pokračuje před dokončením volání.
+dotnet_diagnostic.CS4014.severity = silent

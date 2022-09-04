@@ -40,12 +40,15 @@ using Polaris.Discord;
 using Polaris.Entities;
 using Polaris.Enums;
 using Polaris.Helpers;
-using Polaris.Properties;
+
+using VideoLibrary;
 
 using Nivera;
 using Nivera.Utils;
+
 using Polaris.Pagination;
 using Polaris.CustomCommands;
+using Syn.Speech.Helper;
 using Open.Collections;
 
 namespace Polaris.Core
@@ -98,6 +101,7 @@ namespace Polaris.Core
         public static string[] TrueValues = new string[] { "y", "yes", "ye", "yeah", "true", "t", "1" };
 
         [Command("prefix")]
+        [Aliases("pref")]
         [RequireGuild]
         public async Task SetPrefix(CommandContext ctx, string prefix)
         {
@@ -113,13 +117,317 @@ namespace Polaris.Core
                 .MakeSuccess());
         }
 
+        [Command("createplaylist")]
+        [Aliases("cp")]
+        public async Task CreatePlaylist(CommandContext ctx, string name, string description, string id, params string[] songs)
+        {
+            List<MusicTrack> tracks = new List<MusicTrack>();
+
+            var message = await ctx.RespondAsync(new DiscordEmbedBuilder()
+                .WithDescription($"{EmotePicker.LoadingGif} Loading track(s) ..")
+                .WithColor(ColorPicker.SuccessColor));
+
+            foreach (var song in songs)
+            {
+                try
+                {
+                    var video = await YouTube.Default.GetVideoAsync(song);
+
+                    if (video != null)
+                    {
+                        tracks.Add(new MusicTrack
+                        {
+                            Author = video.Info.Author,
+                            Duration = TimeSpan.FromSeconds((double)(video.Info.LengthSeconds ?? video.ContentLength)),
+                            Title = video.Title,
+                            URL = video.Uri
+                        });
+                    }
+                }
+                catch { }
+            }
+
+            UserPlaylist userPlaylist = UserPlaylistHelper.CreatePlaylist(
+                name,
+                id,
+                description ?? "No description.",
+                ctx.User.Id,
+                ctx.Message.Content.Contains("--global"),
+                tracks);
+
+            await message.ModifyAsync(x => x.Embed = new DiscordEmbedBuilder()
+                .WithAuthor("Playlist created!")
+                .AddField("Playlist Name", userPlaylist.Name, true)
+                .AddField("Playlist ID", userPlaylist.ID, true)
+                .AddField("Description", userPlaylist.Description, true)
+                .AddField("Author", $"<@{userPlaylist.PlaylistOwner}>", true)
+                .AddField("Is Private", userPlaylist.IsPrivate.ToString().ToLower(), true)
+                .AddField("Songs", userPlaylist.Tracks.Count.ToString(), true)
+                .MakeSuccess());
+        }
+
+        [Command("viewplaylist")]
+        [Aliases("vp")]
+        public async Task ViewPlaylist(CommandContext ctx, [RemainingText] string playlist)
+        {
+            var list = UserPlaylistHelper.RetrievePlaylist(playlist);
+
+            if (list == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Failed to find your playlist.")
+                    .MakeError());
+
+                return;
+            }
+
+            if (list.IsPrivate && ctx.User.Id != list.PlaylistOwner)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("This playlist is set as private by it's owner.")
+                    .MakeError());
+
+                return;
+            }
+
+            await ctx.Channel.SendPaginatedMessageAsync(
+                ctx.User,
+                PageParser.SplitToPages(
+                    list.Tracks,
+                    new DiscordEmbedBuilder()
+                    .WithAuthor($"{GlobalCache.GetCachedDiscordMember(list.PlaylistOwner)?.Name ?? "Unknown"}'s playlist - {list.Name}")
+                    .WithFooter(list.Description)
+                    .MakeInfo()),
+                PaginationBehaviour.WrapAround,
+                ButtonPaginationBehavior.DeleteButtons);
+        }
+
+        [Command("deleteplaylist")]
+        [Aliases("dp")]
+        public async Task DeletePlaylist(CommandContext ctx, [RemainingText] string playlist)
+        {
+            var list = UserPlaylistHelper.RetrievePlaylist(playlist);
+
+            if (list == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Failed to find your playlist.")
+                    .MakeError());
+
+                return;
+            }
+
+            if (ctx.User.Id != list.PlaylistOwner)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not the owner of this playlist.")
+                    .MakeError());
+
+                return;
+            }
+
+            UserPlaylistHelper.DeletePlaylist(list);
+
+            await ctx.RespondAsync(new DiscordEmbedBuilder()
+                .WithAuthor("Playlist deleted!")
+                .MakeSuccess());
+        }
+
+        [Command("playplaylist")]
+        [Aliases("pp")]
+        [RequireGuild]
+        public async Task PlayPlaylist(CommandContext ctx, string playlist)
+        {
+            CoreCollection coreCollection = CoreCollection.Get(ctx);
+
+            if (!GlobalConfig.Instance.AllowLavalink)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Lavalink is disabled in the config!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("The Lavalink Server is not connected!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerLavalinkCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("A song is currently playing.")
+                    .MakeError());
+
+                return;
+            }
+
+            if (ctx.Member.VoiceState.Channel == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not connected to a voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You are not in the same voice channel!")
+                    .MakeError());
+
+                return;
+            }
+
+            var list = UserPlaylistHelper.RetrievePlaylist(playlist);
+
+            if (list == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Failed to find your playlist.")
+                    .MakeError());
+
+                return;
+            }
+
+            if (list.IsPrivate && ctx.User.Id != list.PlaylistOwner)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("This playlist is set as private by it's owner.")
+                    .MakeError());
+
+                return;
+            }
+
+            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
+            coreCollection.ServerLavalinkCore.SetVoiceChannel(ctx.Member.VoiceState.Channel);
+
+            await coreCollection.ServerLavalinkCore.PlayAsync(list);
+        }
+
+        [Command("addtoplaylist")]
+        [Aliases("atp")]
+        public async Task AddToPlaylist(CommandContext ctx, string playlist, params string[] songs)
+        {
+            var list = UserPlaylistHelper.RetrievePlaylist(playlist);
+
+            if (list == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Failed to find your playlist.")
+                    .MakeError());
+
+                return;
+            }
+
+            if (ctx.User.Id != list.PlaylistOwner)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You do not own this playlist.")
+                    .MakeError());
+
+                return;
+            }
+
+            List<MusicTrack> tracks = new List<MusicTrack>();
+
+            await ctx.RespondAsync(new DiscordEmbedBuilder()
+                .WithDescription($"{EmotePicker.LoadingGif} Loading track(s) ..")
+                .MakeInfo());
+
+            int curState = list.Tracks.Count;
+
+            foreach (var song in songs)
+            {
+                try
+                {
+                    var video = await YouTube.Default.GetVideoAsync(song);
+
+                    if (video != null)
+                    {
+                        tracks.Add(new MusicTrack
+                        {
+                            Author = video.Info.Author,
+                            Duration = TimeSpan.FromSeconds((double)(video.Info.LengthSeconds ?? video.ContentLength)),
+                            Title = video.Title,
+                            URL = video.Uri
+                        });
+                    }
+                }
+                catch { }
+            }
+
+            list.Tracks.AddRange(tracks);
+
+            foreach (var track in list.Tracks)
+            {
+                if (list.Tracks.Count(x => x.URL == track.URL) > 1)
+                {
+                    while (list.Tracks.Count(x => x.URL == track.URL) > 1)
+                    {
+                        list.Tracks.Remove(list.Tracks.FirstOrDefault(x => x.URL == track.URL));
+                    }
+                }
+            }
+
+            ConfigManager.Save();
+
+            await ctx.RespondAsync(new DiscordEmbedBuilder()
+                .WithAuthor($"Added {list.Tracks.Count - curState} song(s) to {list.ID}!")
+                .MakeSuccess());
+        }
+
+        [Command("removeplaylist")]
+        [Aliases("rfp")]
+        public async Task RemovePlaylist(CommandContext ctx, string playlist, params string[] songs)
+        {
+            var list = UserPlaylistHelper.RetrievePlaylist(playlist);
+
+            if (list == null)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("Failed to find your playlist.")
+                    .MakeError());
+
+                return;
+            }
+
+            if (ctx.User.Id != list.PlaylistOwner)
+            {
+                await ctx.RespondAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("You do not own this playlist.")
+                    .MakeError());
+
+                return;
+            }
+
+            foreach (var index in songs.Select(x => int.Parse(x)))
+            {
+                list.Tracks.RemoveAt(index + 1);
+            }
+
+            int curState = list.Tracks.Count;
+
+            ConfigManager.Save();
+
+            await ctx.RespondAsync(new DiscordEmbedBuilder()
+                .WithAuthor($"Removed {curState - list.Tracks.Count} song(s) from {list.ID}!")
+                .MakeSuccess());
+        }
+
         [Command("viewcommands")]
         [Aliases("vcmds")]
         public async Task ViewCommands(CommandContext ctx)
         {
             var commands = CustomCommandManager.GetCommandsForGuild(ctx.Guild.Id, false);
 
-            if (commands.Count < 0)
+            if (commands == null || commands.Count < 0)
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("There are no custom commands available for this server.")
@@ -128,10 +436,13 @@ namespace Polaris.Core
                 return;
             }
 
+            CommonHelper.RemoveNullEntries(commands);
+
             await ctx.Channel.SendPaginatedMessageAsync(ctx.User, PageParser.SplitToPages(commands, new DiscordEmbedBuilder()
                 .WithAuthor("Custom Commands")
                 .MakeInfo()));
         }
+
 
         [Command("createcommand")]
         [Aliases("ccmd")]
@@ -176,13 +487,13 @@ namespace Polaris.Core
 
             message = result.Result;
 
-            string cmdDesc = message.Content;
+            string cmdDesc = message.Content == "-" ? "No description provided." : message.Content;
 
             await message.RespondAsync(new DiscordEmbedBuilder()
-                .WithAuthor($"You chose this as the command's description. Now let's set-up permissions that will be required for this command. You have to use " +
+                .WithDescription($"Now let's set-up permissions that will be required for this command. You have to use " +
                 $"available command nodes of this bot! If you want to have more permissions, split them with a comma. Use \"everyone\" to enable this command for everyone.")
-                .WithDescription(cmdDesc)
-                .MakeSuccess());
+                .AddEmoteDescription(EmotePicker.CheckEmote)
+                .WithColor(ColorPicker.SuccessColor));
 
             result = await ctx.Channel.GetNextMessageAsync(ctx.User);
 
@@ -200,10 +511,10 @@ namespace Polaris.Core
             List<string> perms = PermsHelper.ProcessPermissions(message.Content);
 
             await message.RespondAsync(new DiscordEmbedBuilder()
-                .WithAuthor("You chose these permissions for this command. Now, let's \"code\"! " +
+                .WithDescription("Now, let's \"code\"! " +
                 "You will need to type the instructions of this command below, every instruction on it's own line.")
-                .WithDescription(string.Join(", ", perms))
-                .MakeSuccess());
+                .AddEmoteDescription(EmotePicker.CheckEmote)
+                .WithColor(ColorPicker.SuccessColor));
 
             result = await ctx.Channel.GetNextMessageAsync(ctx.User);
 
@@ -220,10 +531,9 @@ namespace Polaris.Core
 
             CustomCommandCompiler compiler = new CustomCommandCompiler();
 
-            await message.RespondAsync(new DiscordEmbedBuilder()
-                .WithAuthor($"Compiling ...")
-                .WithColor(ColorPicker.SuccessColor)
-                .AddEmoteAuthor(EmotePicker.LoadingGif));
+            message = await message.RespondAsync(new DiscordEmbedBuilder()
+                .WithDescription($"{EmotePicker.LoadingGif} **Compiling ...**")
+                .WithColor(ColorPicker.SuccessColor));
 
             var compResult = compiler.CompileCustomCommand(new CustomCommand
             {
@@ -232,17 +542,18 @@ namespace Polaris.Core
                 Guild = ctx.Guild.Id,
                 IsGlobal = false,
                 Name = cmdName,
+                Permissions = perms.ToArray(),
                 Source = message.Content.Split(new string[]
                 {
                     "\r",
                     "\n",
                     "\r\n"
-                }, StringSplitOptions.RemoveEmptyEntries)             
+                }, StringSplitOptions.RemoveEmptyEntries),
             });
 
             if (compResult.Status != CompilerStatus.CompilerSuccess)
             {
-                await message.RespondAsync(new DiscordEmbedBuilder()
+                await message.ModifyAsync(x => x.Embed = new DiscordEmbedBuilder()
                     .WithAuthor("An error occured while compiling your command!")
                     .AddField("Error ID", compResult.ErrorId, true)
                     .AddField("Error Reason", compResult.ErrorReason, true)
@@ -255,7 +566,7 @@ namespace Polaris.Core
 
             CustomCommandManager.AddCommand(compResult.Command);
 
-            await message.RespondAsync(new DiscordEmbedBuilder()
+            await message.ModifyAsync(x => x.Embed = new DiscordEmbedBuilder()
                 .WithAuthor("Succesfully compiled your command! You should try it out tho.")
                 .MakeSuccess());
         }
@@ -300,6 +611,7 @@ namespace Polaris.Core
                 .AddField("Voice Gateway Ping", $"{CoreCollection.ActiveCores.Select(x => x.ServerRadioCore).FirstOrDefault(x => x.IsConnected)?.WebPing} ms", true)
                 .AddField("Core ID", $"P-{cores.ServerCore.CoreId}", true)
                 .AddField("Owner", $"<@!{GlobalConfig.Instance.BotOwnerId}>", true)
+                .AddField("Uptime", TimeSpan.FromSeconds(Program.UptimeSeconds).ToString(), true)
                 .WithTimestamp(DateTimeOffset.Now.ToLocalTime())
                 .WithFooter("© Nivera, 2022"));
 

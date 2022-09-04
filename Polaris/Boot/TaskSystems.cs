@@ -89,6 +89,8 @@ namespace Polaris.Boot
                     }
                 }
             });
+
+            reporter.Start();
         }
 
         private static bool FirstExited;

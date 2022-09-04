@@ -4,44 +4,19 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-using DSharpPlus;
-using DSharpPlus.CommandsNext;
-using DSharpPlus.CommandsNext.Attributes;
-using DSharpPlus.CommandsNext.Builders;
-using DSharpPlus.CommandsNext.Converters;
-using DSharpPlus.CommandsNext.Entities;
-using DSharpPlus.CommandsNext.Executors;
-using DSharpPlus.EventArgs;
 using DSharpPlus.Entities;
-using DSharpPlus.Exceptions;
-using DSharpPlus.Interactivity;
 using DSharpPlus.Interactivity.Enums;
-using DSharpPlus.Interactivity.EventHandling;
 using DSharpPlus.Interactivity.Extensions;
 using DSharpPlus.Lavalink;
-using DSharpPlus.Lavalink.Entities;
 using DSharpPlus.Lavalink.EventArgs;
 using DSharpPlus.Net;
-using DSharpPlus.Net.Models;
-using DSharpPlus.Net.Serialization;
-using DSharpPlus.Net.Udp;
-using DSharpPlus.Net.WebSocket;
-using DSharpPlus.SlashCommands;
-using DSharpPlus.SlashCommands.Attributes;
-using DSharpPlus.SlashCommands.EventArgs;
 using DSharpPlus.VoiceNext;
-using DSharpPlus.VoiceNext.Codec;
-using DSharpPlus.VoiceNext.EventArgs;
 
 using Polaris.Pagination;
 using Polaris.Config;
-using Polaris.Boot;
-using Polaris.Core;
 using Polaris.Discord;
 using Polaris.Entities;
-using Polaris.Enums;
 using Polaris.Helpers;
-using Polaris.Properties;
 
 using Nivera;
 
@@ -49,6 +24,8 @@ namespace Polaris.Core
 {
     public class ServerLavalinkCore
     {
+        private ulong _guildId;
+
         public const string TimeSpanFormat = "hh:mm:ss";
 
         private string IP;
@@ -139,9 +116,13 @@ namespace Polaris.Core
             get => TextChannel;
         }
 
-        public ServerLavalinkCore()
+        public ServerLavalinkCore(ulong guildId)
         {
             Log.JoinCategory("cores/lavalink");
+
+            _guildId = guildId;
+
+            Log.Info($"Initializing Lavalink for guild {guildId}");
 
             Lavalink = DiscordNetworkHandlers.LavalinkExtension;
             Lavalink.NodeDisconnected += Lavalink_NodeDisconnected;
@@ -235,7 +216,11 @@ namespace Polaris.Core
         {
             lavalinkNodeConnection.GuildConnectionCreated += (x, e) =>
             {
-                Log.Verbose($"Connected to guild: {x.CurrentState} <-> {x.Guild.Name}");
+                if (x.Guild.Id != _guildId)
+                    return Task.CompletedTask;
+
+                Log.Verbose($"Connected to guild: {x.Guild.Name}");
+                Log.Arguments(x.CurrentState);
 
                 TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
                     .WithAuthor($"Joined {x.Channel.Name}")
@@ -249,6 +234,9 @@ namespace Polaris.Core
 
             lavalinkNodeConnection.GuildConnectionRemoved += (x, e) =>
             {
+                if (x.Guild.Id != _guildId)
+                    return Task.CompletedTask;
+
                 Log.Verbose($"Disconnected from guild: {x.Guild.Name}");
 
                 TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
@@ -276,6 +264,9 @@ namespace Polaris.Core
 
             lavalinkNodeConnection.PlaybackFinished += async (x, e) =>
             {
+                if (x.Guild.Id != _guildId)
+                    return;
+
                 Log.Verbose($"Finished playing {e.Track.Title} in {x.Guild.Name}: {e.Reason}");
 
                 if (IsLooping)
@@ -299,6 +290,9 @@ namespace Polaris.Core
 
             lavalinkNodeConnection.PlaybackStarted += (x, e) =>
             {
+                if (x.Guild.Id != _guildId)
+                    return Task.CompletedTask;
+
                 Log.Verbose($"Started playing {e.Track.Title} in {x.Guild.Name}");
 
                 LavalinkGuild = e.Player;
@@ -309,7 +303,10 @@ namespace Polaris.Core
 
             lavalinkNodeConnection.TrackException += (x, e) =>
             {
-                TextChannel.SendMessageAsync(new DiscordEmbedBuilder()
+                if (x.Guild.Id != _guildId)
+                    return Task.CompletedTask;
+
+                TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
                     .WithAuthor("Playback Error")
                     .WithTitle("An error occured while playing this track.")
                     .WithFooter(e.Error)
@@ -321,17 +318,22 @@ namespace Polaris.Core
 
         public async Task<List<LavalinkTrack>> ConvertPlaylist(UserPlaylist userPlaylist)
         {
+            var msg = await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
+                .WithDescription("Converting your playlist ..")
+                .AddEmoteDescription(EmotePicker.LoadingGif)
+                .WithColor(ColorPicker.SuccessColor));
+
             List<LavalinkTrack> lavalinkTracks = new List<LavalinkTrack>();
 
             foreach (var musicTrack in userPlaylist.Tracks)
             {
-                var lavaTrack = await FindTrack(musicTrack.URL);
+                var lavaTrack = await FindTrack(musicTrack.Title);
 
                 if (lavaTrack == null)
                 {
                     await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
                         .WithAuthor("Playback Error")
-                        .WithTitle($"Failed to load track, skipping: [{musicTrack.Title}]({musicTrack.URL})")
+                        .WithTitle($"Failed to load track, skipping: {musicTrack.Title}.")
                         .MakeWarn());
 
                     continue;
@@ -342,20 +344,20 @@ namespace Polaris.Core
                 }
             }
 
+            if (msg != null)
+                await msg.DeleteAsync();
+
             return lavalinkTracks;
         }
 
         public async Task<LavalinkTrack> FindTrack(string search)
         {
-            LavalinkLoadResult res = await LavalinkGuild.GetTracksAsync(search, LavalinkSearchType.Youtube);
+            LavalinkLoadResult res = await LavalinkGuild.GetTracksAsync(search);
 
-            if (res.LoadResultType == LavalinkLoadResultType.TrackLoaded || res.LoadResultType == LavalinkLoadResultType.SearchResult)
-                return res.Tracks.First();
-
-            if (res.LoadResultType == LavalinkLoadResultType.PlaylistLoaded || res.LoadResultType == LavalinkLoadResultType.NoMatches)
+            if (res.LoadResultType == LavalinkLoadResultType.LoadFailed || res.LoadResultType == LavalinkLoadResultType.NoMatches)
                 return null;
 
-            return null;
+            return res.Tracks.FirstOrDefault();
         }
 
         public async Task JoinAsync(DiscordChannel voiceChannel, DiscordChannel textChannel)
@@ -518,6 +520,15 @@ namespace Polaris.Core
 
         public async Task PlayAsync(List<LavalinkTrack> tracks)
         {
+            if (tracks == null || tracks.Count < 1)
+            {
+                await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
+                    .WithAuthor("There is nothing in the playlist.")
+                    .MakeError());
+
+                return;
+            }
+
             await JoinAsync(VoiceChannel, TextChannel);
 
             Queue.Clear();

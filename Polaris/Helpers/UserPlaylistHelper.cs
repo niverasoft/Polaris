@@ -1,47 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
-using DSharpPlus;
-using DSharpPlus.CommandsNext;
-using DSharpPlus.CommandsNext.Attributes;
-using DSharpPlus.CommandsNext.Builders;
-using DSharpPlus.CommandsNext.Converters;
-using DSharpPlus.CommandsNext.Entities;
-using DSharpPlus.CommandsNext.Executors;
-using DSharpPlus.EventArgs;
-using DSharpPlus.Entities;
-using DSharpPlus.Exceptions;
-using DSharpPlus.Interactivity;
-using DSharpPlus.Interactivity.Enums;
-using DSharpPlus.Interactivity.EventHandling;
-using DSharpPlus.Interactivity.Extensions;
 using DSharpPlus.Lavalink;
-using DSharpPlus.Lavalink.Entities;
-using DSharpPlus.Lavalink.EventArgs;
-using DSharpPlus.Net;
-using DSharpPlus.Net.Models;
-using DSharpPlus.Net.Serialization;
-using DSharpPlus.Net.Udp;
-using DSharpPlus.Net.WebSocket;
-using DSharpPlus.SlashCommands;
-using DSharpPlus.SlashCommands.Attributes;
-using DSharpPlus.SlashCommands.EventArgs;
-using DSharpPlus.VoiceNext;
-using DSharpPlus.VoiceNext.Codec;
-using DSharpPlus.VoiceNext.EventArgs;
 
-using Polaris.Pagination;
 using Polaris.Config;
-using Polaris.Boot;
-using Polaris.Core;
-using Polaris.Discord;
 using Polaris.Entities;
-using Polaris.Enums;
-using Polaris.Helpers;
-using Polaris.Properties;
 
 namespace Polaris.Helpers
 {
@@ -76,14 +39,15 @@ namespace Polaris.Helpers
             return tracks;
         }
 
-        public static UserPlaylist RetrievePlaylist(ulong owner)
+        public static UserPlaylist RetrievePlaylist(string idOrName)
         {
-            return GlobalConfig.Instance.UserPlaylists.FirstOrDefault(x => x.PlaylistOwner == owner);
+            return GlobalConfig.Instance.UserPlaylists.FirstOrDefault(x => x.ID.ToLower() == idOrName.ToLower() || x.Name.ToLower() == idOrName.ToLower());
         }
 
-        public static UserPlaylist RetrievePlaylist(string id)
+        public static void DeletePlaylist(UserPlaylist userPlaylist)
         {
-            return GlobalConfig.Instance.UserPlaylists.FirstOrDefault(x => x.ID == id);
+            GlobalConfig.Instance.UserPlaylists.Remove(userPlaylist);
+            ConfigManager.Save();
         }
 
         public static UserPlaylist CreatePlaylist(string name, string id, string description, ulong owner, bool isPrivate, List<MusicTrack> tracks)

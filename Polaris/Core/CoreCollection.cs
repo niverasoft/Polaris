@@ -29,7 +29,7 @@ namespace Polaris.Core
             ServerReactionRolesCore = new ServerReactionRolesCore();
             ServerTextToSpeechCore = new ServerTextToSpeechCore();
             ServerUtilityCore = new ServerUtilityCore();
-            ServerLavalinkCore = new ServerLavalinkCore();
+            ServerLavalinkCore = new ServerLavalinkCore(serverID);
 
             ActiveCores.Add(this);
         }

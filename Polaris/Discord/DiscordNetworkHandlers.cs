@@ -52,7 +52,7 @@ namespace Polaris.Discord
     {
         static DiscordNetworkHandlers()
         {
-            Log.JoinCategory("discord");
+            Log.JoinCategory("discordnet");
         }
 
         private static bool HasLoaded;
@@ -125,47 +125,45 @@ namespace Polaris.Discord
                     MinimumLogLevel = Microsoft.Extensions.Logging.LogLevel.Information,
                     Token = Encoding.UTF32.GetString(GlobalConfig.Instance.Token),
                     TokenType = TokenType.Bot,
-                    LoggerFactory = new Logging.DSharpLogger()
+                    LoggerFactory = new Logging.DSharpLogger(),
+                    GatewayCompressionLevel = GatewayCompressionLevel.None,
                 });
 
                 GlobalClient.GuildAvailable += (x, e) =>
                 {
-                    Task.Run(async () =>
+                    try
                     {
-                        try
+                        if (ConfigManager.ConfigList.TryGetValue(e.Guild.Id, out var config))
                         {
-                            if (ConfigManager.ConfigList.TryGetValue(e.Guild.Id, out var config))
-                            {
-                                Log.Info($"Discovered a known server. {e.Guild.Id} >> {e.Guild.Name}");
+                            Log.Info($"Discovered a known server. {e.Guild.Id} >> {e.Guild.Name}");
 
-                                var score = new ServerCore();
+                            var score = new ServerCore();
 
-                                await score.LoadAsync(config, ConfigManager.CacheList.TryGetValue(e.Guild.Id, out var cache) ? cache : new ServerCache(), x, e.Guild);
+                            score.Load(config, ConfigManager.CacheList.TryGetValue(e.Guild.Id, out var cache) ? cache : new ServerCache(), x, e.Guild);
 
-                                ServerCores.Add(score);
+                            ServerCores.Add(score);
 
-                                if (!HasLoaded)
-                                    await OnReady();
-                            }
-                            else
-                            {
-                                Log.Info($"A new was server discovered! {e.Guild.Id} >> {e.Guild.Name}");
-
-                                var core = new ServerCore();
-
-                                await core.LoadAsync(x, e.Guild);
-
-                                ServerCores.Add(core);
-
-                                if (!HasLoaded)
-                                    await OnReady();
-                            }
+                            if (!HasLoaded)
+                                OnReady();
                         }
-                        catch (Exception ex)
+                        else
                         {
-                            Log.Error(ex);
+                            Log.Info($"A new was server discovered! {e.Guild.Id} >> {e.Guild.Name}");
+
+                            var core = new ServerCore();
+
+                            core.Load(x, e.Guild);
+
+                            ServerCores.Add(core);
+
+                            if (!HasLoaded)
+                                OnReady();
                         }
-                    });
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex);
+                    }
 
                     return Task.CompletedTask;
                 };
@@ -200,7 +198,7 @@ namespace Polaris.Discord
 
                 CommandsNextExtension.CommandErrored += async (x, e) =>
                 {
-                    Log.Error($"Command errored! {e.Exception} ({e.Command.Name} - {e.Context.RawArgumentString})");
+                    Log.Error($"Command errored! {e.Exception} ({e.Command.Name} - {e.Context.RawArgumentString ?? "No arguments"})");
 
                     if (e.Exception != null)
                     {
@@ -233,31 +231,34 @@ namespace Polaris.Discord
             }
         }
 
-        public static async Task OnReady()
+        public static void OnReady()
         {
-            try
+            Task.Run(async () =>
             {
-                if (GlobalConfig.Instance.BotStatus == "default" || string.IsNullOrEmpty(GlobalConfig.Instance.BotStatus))
-                    await GlobalClient.UpdateStatusAsync(new DiscordActivity
-                    {
-                        ActivityType = ActivityType.Playing,
-                        Name = $"Use {GlobalConfig.Instance.DefaultPrefix}help",
-                    }, UserStatus.Idle);
-                else
-                    await GlobalClient.UpdateStatusAsync(new DiscordActivity
-                    {
-                        ActivityType = ActivityType.Playing,
-                        Name = GlobalConfig.Instance.BotStatus
-                    }, UserStatus.Idle);
+                try
+                {
+                    if (GlobalConfig.Instance.BotStatus == "default" || string.IsNullOrEmpty(GlobalConfig.Instance.BotStatus))
+                        await GlobalClient.UpdateStatusAsync(new DiscordActivity
+                        {
+                            ActivityType = ActivityType.Playing,
+                            Name = $"Use {GlobalConfig.Instance.DefaultPrefix}help",
+                        }, UserStatus.Idle);
+                    else
+                        await GlobalClient.UpdateStatusAsync(new DiscordActivity
+                        {
+                            ActivityType = ActivityType.Playing,
+                            Name = GlobalConfig.Instance.BotStatus
+                        }, UserStatus.Idle);
 
-                HasLoaded = true;
+                    HasLoaded = true;
 
-                Log.Info("Ready!");
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex);
-            }
+                    Log.Info("Ready!");
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex);
+                }
+            });
         }
 
         public static void Kill()

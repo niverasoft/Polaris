@@ -9,11 +9,14 @@ using Polaris.Discord;
 using Polaris.Plugins;
 using Polaris.Logging;
 using Polaris.CustomCommands;
+using Polaris.Reporting;
 
 namespace Polaris.Boot
 {
     public static class Program
     {
+        public static int UptimeSeconds { get; set; }
+        public static Reporter UptimeCounter { get; set; }
         public static PolarisLogger PolarisLogger { get; set; }
         public static DiscordLogger DiscordLogger { get; set; }
         public static FileLogger FileLogger { get; set; }
@@ -95,6 +98,16 @@ namespace Polaris.Boot
                 Log.Info("Thank you for using Polaris!");
 
                 PluginManager.Enable();
+
+                UptimeCounter = new Reporter(1, -1,
+                    () => true,
+                    () => null,
+                    x =>
+                    {
+                        UptimeSeconds++;
+                    });
+
+                UptimeCounter.Start();
 
                 await DiscordNetworkHandlers.InstallAsync();
                 await Task.Delay(-1);
