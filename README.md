@@ -1,4 +1,5 @@
-**This project is paused as I am currently writing a custom library for audio & video playback.**
+**This project is paused as I am currently writing a custom library for audio & video playback**
+**which this bot is going to use, as well as a planned rework of Server Cores into their own Module DLLs.**
 
 # Polaris
 Polaris is a handy Discord bot that contains almost every function you can possibly think of! From games, moderation or music to radio, weather updates, image edits and a lot more!
