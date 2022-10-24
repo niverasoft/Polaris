@@ -2,19 +2,18 @@
 using System.IO;
 using System.Collections.Generic;
 
-using Nivera.IO;
-using Nivera;
+using NiveraLib.Logging;
+using NiveraLib.IO.Binary;
+using Newtonsoft.Json;
+using NiveraLib;
 
 namespace Polaris.Config
 {
     public static class ConfigManager
     {
-        static ConfigManager()
-        {
-            Log.JoinCategory("configs");
-        }
+        public static readonly LogId logId = LogIdGenerator.GenerateId("configManager");
 
-        public static string DatabasePath { get => $"./config"; }
+        public static string DatabasePath { get => $"{Directory.GetCurrentDirectory()}/config.txt"; }
 
         public static string Announcement;
         public static bool HasAnnouncement;
@@ -40,14 +39,14 @@ namespace Polaris.Config
                 }
                 else
                 {
-                    var file = BinaryFile.ReadFrom(DatabasePath);
+                    string[] lines = File.ReadAllLines(DatabasePath);
 
-                    GlobalConfig.Instance = file.DeserializeFile<GlobalConfig>("globalConfig");
-                    GlobalCache.Instance = file.DeserializeFile<GlobalCache>("globalCache");
+                    GlobalConfig.Instance = JsonConvert.DeserializeObject<GlobalConfig>(lines[0]);
+                    GlobalCache.Instance = JsonConvert.DeserializeObject<GlobalCache>(lines[1]);
 
-                    ConfigList = file.DeserializeFile<Dictionary<ulong, ServerConfig>>("serverConfig");
-                    CacheList = file.DeserializeFile<Dictionary<ulong, ServerCache>>("serverCache");
-                    VoiceList = file.DeserializeFile<Dictionary<ulong, VoiceCache>>("voiceCache");
+                    ConfigList = JsonConvert.DeserializeObject<Dictionary<ulong, ServerConfig>>(lines[2]);
+                    CacheList = JsonConvert.DeserializeObject<Dictionary<ulong, ServerCache>>(lines[3]);
+                    VoiceList = JsonConvert.DeserializeObject<Dictionary<ulong, VoiceCache>>(lines[4]);
                 }
 
                 if (File.Exists("./announcement.txt"))
@@ -74,14 +73,31 @@ namespace Polaris.Config
 
         public static void Save()
         {
-            var file = new BinaryFile();
+            try
+            {
+                string[] lines = new string[5];
 
-            file.SerializeFile(GlobalConfig.Instance, "globalConfig");
-            file.SerializeFile(GlobalCache.Instance, "globalCache");
-            file.SerializeFile(ConfigList, "serverConfig");
-            file.SerializeFile(CacheList, "serverCache");
-            file.SerializeFile(VoiceList, "voiceCache");
-            file.WriteTo(DatabasePath);
+                lock (ConfigList)
+                {
+                    lock (CacheList)
+                    {
+                        lock (VoiceList)
+                        {
+                            lines[0] = JsonConvert.SerializeObject(GlobalConfig.Instance);
+                            lines[1] = JsonConvert.SerializeObject(GlobalCache.Instance);
+                            lines[2] = JsonConvert.SerializeObject(new Dictionary<ulong, ServerConfig>(ConfigList));
+                            lines[3] = JsonConvert.SerializeObject(new Dictionary<ulong, ServerCache>(CacheList));
+                            lines[4] = JsonConvert.SerializeObject(new Dictionary<ulong, VoiceCache>(VoiceList));
+                        }
+                    }
+                }
+
+                File.WriteAllLines(DatabasePath, lines);
+            }
+            catch (Exception ex)
+            {
+                Log.SendException(ex, logId);
+            }
         }
     }
 }

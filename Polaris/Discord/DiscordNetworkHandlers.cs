@@ -44,17 +44,14 @@ using Polaris.Helpers;
 using Polaris.Properties;
 using Polaris.Exceptions;
 
-using Nivera;
+using NiveraLib;
+using NiveraLib.Logging;
 
 namespace Polaris.Discord
 {
     public static class DiscordNetworkHandlers
     {
-        static DiscordNetworkHandlers()
-        {
-            Log.JoinCategory("discordnet");
-        }
-
+        private static LogId logId = new LogId("handlers / discord", 111);
         private static bool HasLoaded;
 
         public static DiscordClient GlobalClient;
@@ -93,8 +90,6 @@ namespace Polaris.Discord
 
                 if (File.Exists($"{Directory.GetCurrentDirectory()}/announcement.txt"))
                     File.Delete($"{Directory.GetCurrentDirectory()}/announcement.txt");
-
-                Log.Verbose("Last announcement deleted.");
             }
         }
 
@@ -104,17 +99,19 @@ namespace Polaris.Discord
             {
                 if (GlobalConfig.Instance.Token == null || GlobalConfig.Instance.Token.Length <= 0)
                 {
-                    Log.Error($"You need to set the bot token with the -token launch argument! Exiting in 10 seconds ..");
+                    Log.SendError($"You need to set the bot token with the -token launch argument! Exiting in 10 seconds ..", logId);
+
                     await Task.Delay(10000);
+
                     Program.Kill("Missing bot token.");
                 }
 
                 if (ConfigManager.HasAnnouncement)
                 {
-                    Log.Info("Pending announcement loaded.");
+                    Log.SendInfo("Pending announcement loaded.");
                 }
 
-                Log.Info("Installing Discord Network Handlers ..");
+                Log.SendInfo($"Please wait, trying to connect to Discord ..", logId);
 
                 GlobalClient = new DiscordClient(new DiscordConfiguration
                 {
@@ -122,11 +119,11 @@ namespace Polaris.Discord
                     Intents = DiscordIntents.All,
                     LogTimestampFormat = GlobalConfig.Instance.LogTimestampFormat,
                     MessageCacheSize = 8096,
-                    MinimumLogLevel = Microsoft.Extensions.Logging.LogLevel.Information,
+                    MinimumLogLevel = Microsoft.Extensions.Logging.LogLevel.Trace,
                     Token = Encoding.UTF32.GetString(GlobalConfig.Instance.Token),
                     TokenType = TokenType.Bot,
                     LoggerFactory = new Logging.DSharpLogger(),
-                    GatewayCompressionLevel = GatewayCompressionLevel.None,
+                    GatewayCompressionLevel = GatewayCompressionLevel.Stream,
                 });
 
                 GlobalClient.GuildAvailable += (x, e) =>
@@ -135,7 +132,7 @@ namespace Polaris.Discord
                     {
                         if (ConfigManager.ConfigList.TryGetValue(e.Guild.Id, out var config))
                         {
-                            Log.Info($"Discovered a known server. {e.Guild.Id} >> {e.Guild.Name}");
+                            Log.SendInfo("Creating a Server Core for a known server.", logId);
 
                             var score = new ServerCore();
 
@@ -148,7 +145,7 @@ namespace Polaris.Discord
                         }
                         else
                         {
-                            Log.Info($"A new was server discovered! {e.Guild.Id} >> {e.Guild.Name}");
+                            Log.SendInfo("Creating a Server Core for a new server.", logId);
 
                             var core = new ServerCore();
 
@@ -162,8 +159,23 @@ namespace Polaris.Discord
                     }
                     catch (Exception ex)
                     {
-                        Log.Error(ex);
+                        Log.SendError(ex);
                     }
+
+                    return Task.CompletedTask;
+                };
+
+                GlobalClient.Resumed += (e, x) =>
+                {
+                    Log.SendWarn("Session was resumed!", logId);
+
+                    Task.Run(() =>
+                    {
+                        ServerCores.ForEach(x => x.Destroy());
+                        ServerCores.Clear();
+
+                        OnReady();
+                    });
 
                     return Task.CompletedTask;
                 };
@@ -189,16 +201,9 @@ namespace Polaris.Discord
 
                 CommandsNextExtension.RegisterCommands<GlobalCommandCore>();
 
-                CommandsNextExtension.CommandExecuted += (x, e) =>
-                {
-                    Log.Verbose($"Command executed! {e.Command.Name} - {e.Context.RawArgumentString}");
-
-                    return Task.CompletedTask;
-                };
-
                 CommandsNextExtension.CommandErrored += async (x, e) =>
                 {
-                    Log.Error($"Command errored! {e.Exception} ({e.Command.Name} - {e.Context.RawArgumentString ?? "No arguments"})");
+                    Log.SendError($"Command errored! {e.Exception} ({e.Command.Name} - {e.Context.RawArgumentString ?? "No arguments"})", logId);
 
                     if (e.Exception != null)
                     {
@@ -214,8 +219,8 @@ namespace Polaris.Discord
                         else
                         {
                             await e.Context.Channel.SendMessageAsync(new DiscordEmbedBuilder()
-                                .WithAuthor("Command Error")
-                                .WithTitle("Unknown Error")
+                                .WithAuthor("Command SendError")
+                                .WithTitle("Unknown SendError")
                                 .WithDescription(e.Exception.Message)
                                 .MakeError());
                         }
@@ -227,7 +232,7 @@ namespace Polaris.Discord
             }
             catch (Exception ex)
             {
-                Log.Error(ex);
+                Log.SendError(ex);
             }
         }
 
@@ -252,11 +257,11 @@ namespace Polaris.Discord
 
                     HasLoaded = true;
 
-                    Log.Info("Ready!");
+                    Log.SendInfo("The bot is ready to operate.", logId);
                 }
                 catch (Exception ex)
                 {
-                    Log.Error(ex);
+                    Log.SendError(ex);
                 }
             });
         }

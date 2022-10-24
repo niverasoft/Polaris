@@ -1,36 +1,38 @@
-﻿using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Diagnostics;
-
-using DSharpPlus.Entities;
-using DSharpPlus.Lavalink;
+﻿using DSharpPlus.Entities;
 using DSharpPlus.VoiceNext;
+
+using Newtonsoft.Json.Linq;
+
+using NiveraLib.Logging;
+using NiveraLib;
 
 using Polaris.Config;
 using Polaris.Discord;
 using Polaris.Entities;
 using Polaris.Helpers;
 
-using Nivera;
 using System;
+using System.Diagnostics;
+using System.IO;
 using System.Net;
-using Newtonsoft.Json.Linq;
-using Newtonsoft.Json;
+using System.Threading;
+using System.Threading.Tasks;
 
-namespace Polaris.Core
+namespace Polaris.Core.MusicModules
 {
-    public class ServerRadioCore
+    public class RadioMusicModule
     {
+        private ServerMusicCore core;
         private Thread _ffmpegThread;
-        private ulong _serverId;
+        private LogId logId;
 
         private volatile Process _ffmpegProcess;
         private volatile Stream _ffmpegStream;
-        private volatile DiscordChannel _voiceChannel;
-        private volatile DiscordChannel _textChannel;
         private volatile RadioStation _radioStation;
         private volatile VoiceNextConnection _voiceNextConn;
+        private DiscordChannel _textChannel;
+        private DiscordChannel _voiceChannel;
+
         private volatile VoiceNextExtension _voiceNext;
         private volatile VoiceTransmitSink _voiceSink;
         private CancellationTokenSource _tokenSource;
@@ -40,43 +42,28 @@ namespace Polaris.Core
         public bool IsConnected { get => _voiceNextConn != null && _voiceNextConn.TargetChannel != null; }
         public bool IsPaused { get => _voicePause; }
         public bool IsPlaying { get => _voiceNextConn?.IsPlaying ?? false; }
-        public bool AllowVoiceCapture { get; }
+
         public int WebPing { get => _voiceNextConn?.WebSocketPing ?? 0; }
         public int UdpPing { get => _voiceNextConn?.UdpPing ?? 0; }
 
-        public ServerRadioCore(ulong serverId)
+        public DiscordChannel Text { get => _textChannel; }
+        public DiscordChannel Voice { get => _voiceChannel; }
+
+        public RadioMusicModule(ServerMusicCore core, ulong serverId)
         {
+            this.core = core;
+
+            logId = new LogId("cores / radio", (long)serverId);
+
             _voiceNext = DiscordNetworkHandlers.GlobalClient.GetVoiceNext();
-            _serverId = serverId;
-            AllowVoiceCapture = CoreCollection.Get(_serverId)?.ServerConfig.AllowVoiceCapture ?? false;
         }
 
         public void InstallHandlers(VoiceNextConnection voiceNextConnection)
         {
             voiceNextConnection.VoiceSocketErrored += (x, e) =>
             {
-                Log.Error($"An error occured in the VoiceNext WebSocket");
-                Log.Arguments(x, e);
-
-                return Task.CompletedTask;
-            };
-
-            voiceNextConnection.VoiceReceived += (x, e) =>
-            {
-                if (AllowVoiceCapture && e.User != null)
-                {
-                    VoiceCache voiceCache = ConfigManager.VoiceList.TryGetValue(e.User.Id, out var cache) ? cache : new VoiceCache();
-
-                    voiceCache.DiscordUserId = e.User.Id;
-                    voiceCache.LastSSRC = e.SSRC;
-                    voiceCache.OpusVoicePackets.Add(e.OpusData.ToArray());
-                    voiceCache.PcmVoicePackets.Add(e.PcmData.ToArray());
-
-                    Log.Info("VoiceCapture ->");
-                    Log.Arguments(e);
-
-                    ConfigManager.VoiceList[e.User.Id] = voiceCache;
-                }
+                Log.SendError($"An error occured in the VoiceNext WebSocket", logId);
+                Log.SendError(e.Exception, logId);
 
                 return Task.CompletedTask;
             };
@@ -154,7 +141,7 @@ namespace Polaris.Core
             }
             catch (Exception ex)
             {
-                Log.Error(ex);
+                Log.SendError(ex, logId);
             }
         }
 
@@ -234,7 +221,7 @@ namespace Polaris.Core
 
             if (IsPlaying)
                 await StopAsync();
-         
+
             _radioStation = radioStation;
 
             await _voiceNextConn.SendSpeakingAsync(true);
@@ -284,7 +271,7 @@ namespace Polaris.Core
             }
             catch (OperationCanceledException)
             {
-                Log.Info("Playback cancelled, cleaning up!");
+                Log.SendInfo("Playback cancelled, cleaning up!", logId);
 
                 _ffmpegProcess.WaitForExit();
 
@@ -306,9 +293,6 @@ namespace Polaris.Core
 
         public async Task<DiscordEmbedBuilder> AddStationInfo(RadioStation radioStation, DiscordEmbedBuilder embedBuilder)
         {
-            Log.Arguments(radioStation);
-            Log.Arguments(embedBuilder);
-
             if (string.IsNullOrEmpty(radioStation.DataUrl) || radioStation.DataUrl == "-")
                 return embedBuilder;
 
@@ -319,16 +303,11 @@ namespace Polaris.Core
                 using (var web = new WebClient())
                     jsonData = await web.DownloadStringTaskAsync(radioStation.DataUrl);
 
-                Log.Verbose(jsonData);
-
                 if (string.IsNullOrEmpty(jsonData))
                     return embedBuilder;
 
                 JObject json = JObject.Parse(jsonData);
                 JToken token = json.GetValue("current");
-
-                Log.Arguments(json);
-                Log.Arguments(token);
 
                 string imageUrl = token.Value<string>("image");
                 string songName = token.Value<string>("song");
@@ -344,7 +323,7 @@ namespace Polaris.Core
             }
             catch (Exception ex)
             {
-                Log.Error(ex);
+                Log.SendError(ex);
 
                 return null;
             }

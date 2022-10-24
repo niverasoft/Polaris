@@ -33,7 +33,7 @@ namespace Polaris.Pagination
 
                 if (lines.Length + 1 < EmbedLimits.ItemsPerPage)
                 {
-                    builder.Description += $"{Environment.NewLine}{NumberEmotes.NumberToEmote(PageParser.GetTotalAmount(pages) + 1)} [{item.Title}]({item.Uri.AbsoluteUri}) [{item.Length.ToString()}]\n";
+                    builder.Description += $"{NumberEmotes.NumberToEmote(PageParser.GetTotalAmount(pages) + 1)} [{item.Title}]({item.Uri.AbsoluteUri}) [{item.Length.ToString()}]\n";
 
                     page.Embed = builder.Build();
                 }

@@ -7,58 +7,30 @@ using System.Threading.Tasks;
 using DSharpPlus;
 using DSharpPlus.CommandsNext;
 using DSharpPlus.CommandsNext.Attributes;
-using DSharpPlus.CommandsNext.Builders;
-using DSharpPlus.CommandsNext.Converters;
-using DSharpPlus.CommandsNext.Entities;
-using DSharpPlus.CommandsNext.Executors;
-using DSharpPlus.EventArgs;
 using DSharpPlus.Entities;
-using DSharpPlus.Exceptions;
 using DSharpPlus.Interactivity;
 using DSharpPlus.Interactivity.Enums;
-using DSharpPlus.Interactivity.EventHandling;
 using DSharpPlus.Interactivity.Extensions;
-using DSharpPlus.Lavalink;
-using DSharpPlus.Lavalink.Entities;
-using DSharpPlus.Lavalink.EventArgs;
-using DSharpPlus.Net;
-using DSharpPlus.Net.Models;
-using DSharpPlus.Net.Serialization;
-using DSharpPlus.Net.Udp;
-using DSharpPlus.Net.WebSocket;
-using DSharpPlus.SlashCommands;
-using DSharpPlus.SlashCommands.Attributes;
-using DSharpPlus.SlashCommands.EventArgs;
-using DSharpPlus.VoiceNext;
-using DSharpPlus.VoiceNext.Codec;
-using DSharpPlus.VoiceNext.EventArgs;
 
 using Polaris.Config;
 using Polaris.Boot;
-using Polaris.Core;
 using Polaris.Discord;
 using Polaris.Entities;
-using Polaris.Enums;
 using Polaris.Helpers;
-
-using VideoLibrary;
-
-using Nivera;
-using Nivera.Utils;
-
 using Polaris.Pagination;
-using Polaris.CustomCommands;
-using Syn.Speech.Helper;
-using Open.Collections;
+using Polaris.Properties;
+
+using NiveraLib;
+using NiveraLib.Logging;
+
+using Polaris.Helpers.Music;
+using System.Collections.Concurrent;
 
 namespace Polaris.Core
 {
     public static class CommandExtensions
     {
-        static CommandExtensions()
-        {
-            Log.JoinCategory("commands");
-        }
+        public static LogId logId = new LogId("core / commands / extensions", 121);
 
         public static bool CheckPerms(this CommandContext ctx, string perms, out CoreCollection coreCollection)
         {
@@ -70,7 +42,7 @@ namespace Polaris.Core
                     .WithAuthor("Fatal error - failed to find this server's core collection! Issue reported.")
                     .MakeError());
 
-                Log.Warn($"Failed to find the core collection of {ctx.Guild.Name} - {ctx.Guild.Id}");
+                Log.SendWarn($"Failed to find the core collection of {ctx.Guild.Name} - {ctx.Guild.Id}");
 
                 return false;
             }
@@ -93,6 +65,8 @@ namespace Polaris.Core
 
             return valid;
         }
+
+        public static ConcurrentQueue<DiscordMessage> DeleteMusic = new ConcurrentQueue<DiscordMessage>();
     }
 
     public class GlobalCommandCore : BaseCommandModule
@@ -124,23 +98,28 @@ namespace Polaris.Core
             List<MusicTrack> tracks = new List<MusicTrack>();
 
             var message = await ctx.RespondAsync(new DiscordEmbedBuilder()
-                .WithDescription($"{EmotePicker.LoadingGif} Loading track(s) ..")
+                .WithDescription($"{EmotePicker.LoadingGif} **Loading track(s) ..**")
                 .WithColor(ColorPicker.SuccessColor));
 
             foreach (var song in songs)
             {
+                var video = await MusicSearch.Search(song);
+
                 try
                 {
-                    var video = await YouTube.Default.GetVideoAsync(song);
-
                     if (video != null)
                     {
+                        if (!(video is TrackSearchResult track))
+                            continue;
+
                         tracks.Add(new MusicTrack
                         {
-                            Author = video.Info.Author,
-                            Duration = TimeSpan.FromSeconds((double)(video.Info.LengthSeconds ?? video.ContentLength)),
-                            Title = video.Title,
-                            URL = video.Uri
+                            Author = track.SelectedTrack.Author,
+                            AuthorUrl = track.SelectedTrack.AuthorUrl,
+                            ThumbnailUrl = track.SelectedTrack.Thumbnail,
+                            Duration = track.SelectedTrack.Duration,
+                            Title = track.SelectedTrack.Title,
+                            Url = track.SelectedTrack.Url
                         });
                     }
                 }
@@ -240,25 +219,7 @@ namespace Polaris.Core
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
 
-            if (!GlobalConfig.Instance.AllowLavalink)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Lavalink is disabled in the config!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("The Lavalink Server is not connected!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (coreCollection.ServerLavalinkCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
+            if (coreCollection.ServerMusicCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("A song is currently playing.")
@@ -276,7 +237,7 @@ namespace Polaris.Core
                 return;
             }
 
-            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            if (coreCollection.ServerMusicCore.AudioChannel != null && (coreCollection.ServerMusicCore.AudioChannel.Id != ctx.Member.VoiceState.Channel.Id))
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("You are not in the same voice channel!")
@@ -305,10 +266,8 @@ namespace Polaris.Core
                 return;
             }
 
-            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
-            coreCollection.ServerLavalinkCore.SetVoiceChannel(ctx.Member.VoiceState.Channel);
-
-            await coreCollection.ServerLavalinkCore.PlayAsync(list);
+            coreCollection.ServerMusicCore.SetChannels(ctx.Channel, ctx.Member.VoiceState.Channel);
+            coreCollection.ServerMusicCore.Play(list);
         }
 
         [Command("addtoplaylist")]
@@ -335,45 +294,35 @@ namespace Polaris.Core
                 return;
             }
 
-            List<MusicTrack> tracks = new List<MusicTrack>();
-
             await ctx.RespondAsync(new DiscordEmbedBuilder()
-                .WithDescription($"{EmotePicker.LoadingGif} Loading track(s) ..")
+                .WithDescription($"{EmotePicker.LoadingGif} **Loading track(s) ..**")
                 .MakeInfo());
 
             int curState = list.Tracks.Count;
 
             foreach (var song in songs)
             {
+                var video = await MusicSearch.Search(song);
+
                 try
                 {
-                    var video = await YouTube.Default.GetVideoAsync(song);
-
                     if (video != null)
                     {
-                        tracks.Add(new MusicTrack
+                        if (!(video is TrackSearchResult track))
+                            continue;
+
+                        list.Tracks.Add(new MusicTrack
                         {
-                            Author = video.Info.Author,
-                            Duration = TimeSpan.FromSeconds((double)(video.Info.LengthSeconds ?? video.ContentLength)),
-                            Title = video.Title,
-                            URL = video.Uri
+                            Author = track.SelectedTrack.Author,
+                            AuthorUrl = track.SelectedTrack.AuthorUrl,
+                            ThumbnailUrl = track.SelectedTrack.Thumbnail,
+                            Duration = track.SelectedTrack.Duration,
+                            Title = track.SelectedTrack.Title,
+                            Url = track.SelectedTrack.Url
                         });
                     }
                 }
                 catch { }
-            }
-
-            list.Tracks.AddRange(tracks);
-
-            foreach (var track in list.Tracks)
-            {
-                if (list.Tracks.Count(x => x.URL == track.URL) > 1)
-                {
-                    while (list.Tracks.Count(x => x.URL == track.URL) > 1)
-                    {
-                        list.Tracks.Remove(list.Tracks.FirstOrDefault(x => x.URL == track.URL));
-                    }
-                }
             }
 
             ConfigManager.Save();
@@ -421,156 +370,6 @@ namespace Polaris.Core
                 .MakeSuccess());
         }
 
-        [Command("viewcommands")]
-        [Aliases("vcmds")]
-        public async Task ViewCommands(CommandContext ctx)
-        {
-            var commands = CustomCommandManager.GetCommandsForGuild(ctx.Guild.Id, false);
-
-            if (commands == null || commands.Count < 0)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("There are no custom commands available for this server.")
-                    .MakeSuccess());
-
-                return;
-            }
-
-            CommonHelper.RemoveNullEntries(commands);
-
-            await ctx.Channel.SendPaginatedMessageAsync(ctx.User, PageParser.SplitToPages(commands, new DiscordEmbedBuilder()
-                .WithAuthor("Custom Commands")
-                .MakeInfo()));
-        }
-
-
-        [Command("createcommand")]
-        [Aliases("ccmd")]
-        public async Task CreateCommand(CommandContext ctx)
-        {
-            if (!ctx.CheckPerms("cc.create", out var cores))
-                return;
-
-            await ctx.RespondAsync(new DiscordEmbedBuilder()
-                .WithAuthor("Alright, let's create a new command. First, type the name of your command. It will be executed by it.")
-                .MakeSuccess());
-
-            var result = await ctx.Channel.GetNextMessageAsync(ctx.User);
-
-            if (result.TimedOut)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Sorry, this operation timed out.")
-                    .MakeError());
-
-                return;
-            }
-
-            var message = result.Result;
-
-            string cmdName = message.Content.Split(' ')[0];
-
-            await message.RespondAsync(new DiscordEmbedBuilder()
-                .WithAuthor($"You chose {cmdName} as the name of your command. Now set it's description - shortly describe what it does or use \"-\" for a blank description.")
-                .MakeSuccess());
-
-            result = await ctx.Channel.GetNextMessageAsync(ctx.User);
-
-            if (result.TimedOut)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Sorry, this operation timed out.")
-                    .MakeError());
-
-                return;
-            }
-
-            message = result.Result;
-
-            string cmdDesc = message.Content == "-" ? "No description provided." : message.Content;
-
-            await message.RespondAsync(new DiscordEmbedBuilder()
-                .WithDescription($"Now let's set-up permissions that will be required for this command. You have to use " +
-                $"available command nodes of this bot! If you want to have more permissions, split them with a comma. Use \"everyone\" to enable this command for everyone.")
-                .AddEmoteDescription(EmotePicker.CheckEmote)
-                .WithColor(ColorPicker.SuccessColor));
-
-            result = await ctx.Channel.GetNextMessageAsync(ctx.User);
-
-            if (result.TimedOut)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Sorry, this operation timed out.")
-                    .MakeError());
-
-                return;
-            }
-
-            message = result.Result;
-
-            List<string> perms = PermsHelper.ProcessPermissions(message.Content);
-
-            await message.RespondAsync(new DiscordEmbedBuilder()
-                .WithDescription("Now, let's \"code\"! " +
-                "You will need to type the instructions of this command below, every instruction on it's own line.")
-                .AddEmoteDescription(EmotePicker.CheckEmote)
-                .WithColor(ColorPicker.SuccessColor));
-
-            result = await ctx.Channel.GetNextMessageAsync(ctx.User);
-
-            if (result.TimedOut)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Sorry, this operation timed out.")
-                    .MakeError());
-
-                return;
-            }
-
-            message = result.Result;
-
-            CustomCommandCompiler compiler = new CustomCommandCompiler();
-
-            message = await message.RespondAsync(new DiscordEmbedBuilder()
-                .WithDescription($"{EmotePicker.LoadingGif} **Compiling ...**")
-                .WithColor(ColorPicker.SuccessColor));
-
-            var compResult = compiler.CompileCustomCommand(new CustomCommand
-            {
-                Author = ctx.Member.Mention,
-                Description = cmdDesc,
-                Guild = ctx.Guild.Id,
-                IsGlobal = false,
-                Name = cmdName,
-                Permissions = perms.ToArray(),
-                Source = message.Content.Split(new string[]
-                {
-                    "\r",
-                    "\n",
-                    "\r\n"
-                }, StringSplitOptions.RemoveEmptyEntries),
-            });
-
-            if (compResult.Status != CompilerStatus.CompilerSuccess)
-            {
-                await message.ModifyAsync(x => x.Embed = new DiscordEmbedBuilder()
-                    .WithAuthor("An error occured while compiling your command!")
-                    .AddField("Error ID", compResult.ErrorId, true)
-                    .AddField("Error Reason", compResult.ErrorReason, true)
-                    .AddField("Line Number", (compResult.ErrorIndex + 1).ToString(), true)
-                    .AddField("Line", compResult.ParseLine, true)
-                    .MakeError());
-
-                return;
-            }
-
-            CustomCommandManager.AddCommand(compResult.Command);
-
-            await message.ModifyAsync(x => x.Embed = new DiscordEmbedBuilder()
-                .WithAuthor("Succesfully compiled your command! You should try it out tho.")
-                .MakeSuccess());
-        }
-
         [Command("announce")]
         public async Task Announce(CommandContext ctx)
         {
@@ -605,40 +404,15 @@ namespace Polaris.Core
                 .WithColor(DiscordColor.Blue)
                 .WithTitle("About me!")
                 .WithUrl("https://github.com/niverasoft/Polaris")
-                .AddField("Version", $"Polaris ({BuildInfo.Version} / {BuildInfo.Branch})\nGateway (v{ctx.Client.GatewayVersion})", true)
+                .AddField("Version", $"Polaris ({Program.Version}-{Program.Version.Release.Name.ToLower()})\nGateway (v{ctx.Client.GatewayVersion})", true)
                 .AddField("Library", $"DSharpPlus ({ctx.Client.VersionString})\nNiveraLib ({LibProperties.LibraryVersion})", true)
                 .AddField("Ping", $"{ctx.Client.Ping} ms", true)
-                .AddField("Voice Gateway Ping", $"{CoreCollection.ActiveCores.Select(x => x.ServerRadioCore).FirstOrDefault(x => x.IsConnected)?.WebPing} ms", true)
+                .AddField("Voice Gateway Ping", $"{CoreCollection.ActiveCores.Select(x => x.ServerMusicCore.radioModule).FirstOrDefault(x => x.IsConnected)?.WebPing ?? -1} ms", true)
                 .AddField("Core ID", $"P-{cores.ServerCore.CoreId}", true)
                 .AddField("Owner", $"<@!{GlobalConfig.Instance.BotOwnerId}>", true)
-                .AddField("Uptime", TimeSpan.FromSeconds(Program.UptimeSeconds).ToString(), true)
+                .AddField("Uptime", TimeSpan.FromMilliseconds(Program.UptimeSeconds).ToString(), true)
                 .WithTimestamp(DateTimeOffset.Now.ToLocalTime())
-                .WithFooter("© Nivera, 2022"));
-
-            if (GlobalConfig.Instance.IncludeSystemDebug)
-            {
-                await ctx.Channel.SendMessageAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("System Information Debug")
-                    .AddField("Operating System", SystemHelper.Name, true)
-                    .AddField("Operating System Version", Environment.OSVersion.Version.ToString(), true)
-                    .AddField("Operating System Architecture", SystemHelper.Architecture, true)
-                    .AddField("Machine Uptime", new TimeSpan(SystemHelper.Is32Bit ? Environment.TickCount : Environment.TickCount64).ToString(), true)
-                    .AddField("App Runtime", SystemHelper.Runtime, true)
-                    .AddField("Processor Name", SystemHelper.CpuName, true)
-                    .AddField("Processor Cores", $"L{SystemHelper.CpuLogicalCores}, P{SystemHelper.CpuPhysicalCores}", true)
-                    .AddField("Processor Frequency", SystemHelper.CpuFrequencyString, true)
-                    .AddField("System Memory", $"{SystemHelper.RamFreeString.Replace("MB", "GB")} / {SystemHelper.RamTotalString.Replace("MB", "GB")}", true)
-                    .WithFooter("You are seeing this message because you enabled system information debug in the global config.")
-                    .MakeInfo());
-            }
-        }
-
-        [Command("radionowplaying")]
-        [Aliases("rnp", "radionp")]
-        [RequireGuild]
-        public async Task RadioNowPlaying(CommandContext ctx)
-        {
-            await CoreCollection.Get(ctx)?.ServerRadioCore?.NowPlayingAsync();
+                .WithFooter($"© {Resources.Developer}, 2022"));
         }
 
         [Command("addradio")]
@@ -707,211 +481,11 @@ namespace Polaris.Core
             await ctx.Channel.SendPaginatedMessageAsync(ctx.User, pages, PaginationBehaviour.WrapAround, ButtonPaginationBehavior.Ignore);
         }
 
-        [Command("radioplay")]
-        [Aliases("rp")]
-        [RequireGuild]
-        public async Task RadioPlay(CommandContext ctx, [RemainingText]string radioName)
-        {
-            CoreCollection coreCollection = CoreCollection.Get(ctx);
-
-            if (ctx.Member.VoiceState == null || ctx.Member.VoiceState.Channel == null)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("You are not connected to a voice channel!")
-                    .MakeError());
-
-                return;
-            }
-
-            RadioStation radioStation = GlobalCache.Instance.Stations.FirstOrDefault(x => x.Name.ToLower().Contains(radioName.ToLower()));
-
-            if (radioStation == null)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Failed to find specified radio station.")
-                    .MakeError());
-
-                return;
-            }
-
-            if (coreCollection.ServerRadioCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("A radio station is currently playing.")
-                    .MakeError());
-
-                return;
-            }
-
-            await coreCollection.ServerRadioCore.JoinAsync(ctx.Member.VoiceState.Channel, ctx.Channel);
-            await coreCollection.ServerRadioCore.PlayAsync(radioStation);
-        }
-
-
-        [Command("radiojoin")]
-        [Aliases("rj")]
-        [RequireGuild]
-        public async Task RadioJoin(CommandContext ctx, [RemainingText] string radioName)
-        {
-            CoreCollection coreCollection = CoreCollection.Get(ctx);
-
-            if (ctx.Member.VoiceState == null || ctx.Member.VoiceState.Channel == null)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("You are not connected to a voice channel!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (coreCollection.ServerRadioCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("A radio station is currently playing.")
-                    .MakeError());
-
-                return;
-            }
-
-            await coreCollection.ServerRadioCore.JoinAsync(ctx.Member.VoiceState.Channel, ctx.Channel);
-        }
-
-
-        [Command("radioleave")]
-        [Aliases("rl")]
-        [RequireGuild]
-        public async Task RadioLeave(CommandContext ctx, [RemainingText] string radioName)
-        {
-            CoreCollection coreCollection = CoreCollection.Get(ctx);
-
-            if (ctx.Member.VoiceState == null || ctx.Member.VoiceState.Channel == null)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("You are not connected to a voice channel!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (coreCollection.ServerRadioCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("A radio station is currently playing.")
-                    .MakeError());
-
-                return;
-            }
-
-            await coreCollection.ServerRadioCore.DisconnectAsync();
-        }
-
-        [Command("radiopause")]
-        [Aliases("rpa")]
-        [RequireGuild]
-        public async Task RadioPause(CommandContext ctx, [RemainingText] string radioName)
-        {
-            CoreCollection coreCollection = CoreCollection.Get(ctx);
-
-            if (ctx.Member.VoiceState == null || ctx.Member.VoiceState.Channel == null)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("You are not connected to a voice channel!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (coreCollection.ServerRadioCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("A radio station is currently playing.")
-                    .MakeError());
-
-                return;
-            }
-
-            await coreCollection.ServerRadioCore.PauseAsync();
-        }
-
-        [Command("radioresume")]
-        [Aliases("rres")]
-        [RequireGuild]
-        public async Task RadioResume(CommandContext ctx, [RemainingText] string radioName)
-        {
-            CoreCollection coreCollection = CoreCollection.Get(ctx);
-
-            if (ctx.Member.VoiceState == null || ctx.Member.VoiceState.Channel == null)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("You are not connected to a voice channel!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (coreCollection.ServerRadioCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("A radio station is currently playing.")
-                    .MakeError());
-
-                return;
-            }
-
-            await coreCollection.ServerRadioCore.ResumeAsync();
-        }
-
-        [Command("radiostop")]
-        [Aliases("rs")]
-        [RequireGuild]
-        public async Task RadioStop(CommandContext ctx, [RemainingText] string radioName)
-        {
-            CoreCollection coreCollection = CoreCollection.Get(ctx);
-
-            if (ctx.Member.VoiceState == null || ctx.Member.VoiceState.Channel == null)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("You are not connected to a voice channel!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (coreCollection.ServerRadioCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("A radio station is currently playing.")
-                    .MakeError());
-
-                return;
-            }
-
-            await coreCollection.ServerRadioCore.StopAsync();
-        }
-
         [Command("join")]
         [RequireGuild]
-        public async Task Join(CommandContext ctx)
+        public async Task Join(CommandContext ctx, string type = null)
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
-
-            if (!GlobalConfig.Instance.AllowLavalink)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Lavalink is disabled in the config!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("The Lavalink Server is not connected!")
-                    .MakeError());
-
-                return;
-            }
 
             if (ctx.Member.VoiceState == null || ctx.Member.VoiceState.Channel == null)
             {
@@ -922,7 +496,7 @@ namespace Polaris.Core
                 return;
             }
 
-            if (coreCollection.ServerLavalinkCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
+            if (coreCollection.ServerMusicCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("A song is currently playing.")
@@ -931,9 +505,8 @@ namespace Polaris.Core
                 return;
             }
 
-            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
-
-            await coreCollection.ServerLavalinkCore.JoinAsync(ctx.Member.VoiceState.Channel, ctx.Channel);
+            coreCollection.ServerMusicCore.SetChannels(ctx.Channel, ctx.Member.VoiceState.Channel);
+            coreCollection.ServerMusicCore.Join(ctx.Member.VoiceState.Channel, ctx.Channel, ctx.Message.Content.Contains("-radio") ? "radio" : "lavalink");
         }
 
         [Command("leave")]
@@ -943,24 +516,6 @@ namespace Polaris.Core
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
 
-            if (!GlobalConfig.Instance.AllowLavalink)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Lavalink is disabled in the config!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("The Lavalink Server is not connected!")
-                    .MakeError());
-
-                return;
-            }
-
             if (ctx.Member.VoiceState == null || ctx.Member.VoiceState.Channel == null)
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
@@ -970,7 +525,7 @@ namespace Polaris.Core
                 return;
             }
 
-            if (!coreCollection.ServerLavalinkCore.IsConnected)
+            if (!coreCollection.ServerMusicCore.IsConnected)
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("I am not in a voice channel!")
@@ -979,7 +534,7 @@ namespace Polaris.Core
                 return;
             }
 
-            if (coreCollection.ServerLavalinkCore.Voice == null || coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id)
+            if (coreCollection.ServerMusicCore.AudioChannel == null || coreCollection.ServerMusicCore.AudioChannel.Id != ctx.Member.VoiceState.Channel.Id)
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("You are not in the same voice channel!")
@@ -988,9 +543,8 @@ namespace Polaris.Core
                 return;
             }
 
-            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
-
-            await coreCollection.ServerLavalinkCore.LeaveAsync();
+            coreCollection.ServerMusicCore.SetChannels(ctx.Channel, ctx.Member.VoiceState.Channel);
+            coreCollection.ServerMusicCore.Disconnect();
         }
 
         [Command("play")]
@@ -1000,25 +554,7 @@ namespace Polaris.Core
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
 
-            if (!GlobalConfig.Instance.AllowLavalink)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Lavalink is disabled in the config!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("The Lavalink Server is not connected!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (coreCollection.ServerLavalinkCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
+            if (coreCollection.ServerMusicCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("A song is currently playing.")
@@ -1036,7 +572,7 @@ namespace Polaris.Core
                 return;
             }
 
-            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            if (coreCollection.ServerMusicCore.AudioChannel != null && (coreCollection.ServerMusicCore.AudioChannel.Id != ctx.Member.VoiceState.Channel.Id))
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("You are not in the same voice channel!")
@@ -1045,9 +581,10 @@ namespace Polaris.Core
                 return;
             }
 
-            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
+            CommandExtensions.DeleteMusic.Enqueue(await ctx.Channel.SendMessageAsync($"**{EmotePicker.LoadingGif} Loading track(s) ..**"));
 
-            await coreCollection.ServerLavalinkCore.PlayAsync(url, ctx.Member.VoiceState.Channel, ctx.Channel, ctx.User);
+            coreCollection.ServerMusicCore.SetChannels(ctx.Channel, ctx.Member.VoiceState.Channel);
+            coreCollection.ServerMusicCore.Play(url, ctx.Member ?? ctx.User);
         }
 
         [Command("pause")]
@@ -1057,15 +594,6 @@ namespace Polaris.Core
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
 
-            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("The Lavalink Server is not connected!")
-                    .MakeError());
-
-                return;
-            }
-
             if (ctx.Member.VoiceState.Channel == null)
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
@@ -1075,7 +603,7 @@ namespace Polaris.Core
                 return;
             }
 
-            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            if (coreCollection.ServerMusicCore.AudioChannel != null && (coreCollection.ServerMusicCore.AudioChannel.Id != ctx.Member.VoiceState.Channel.Id))
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("You are not in the same voice channel!")
@@ -1084,9 +612,8 @@ namespace Polaris.Core
                 return;
             }
 
-            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
-
-            await coreCollection.ServerLavalinkCore.PauseAsync();
+            coreCollection.ServerMusicCore.SetChannels(ctx.Channel, ctx.Member.VoiceState.Channel);
+            coreCollection.ServerMusicCore.Pause();
         }
 
         [Command("resume")]
@@ -1096,24 +623,6 @@ namespace Polaris.Core
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
 
-            if (!GlobalConfig.Instance.AllowLavalink)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Lavalink is disabled in the config!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("The Lavalink Server is not connected!")
-                    .MakeError());
-
-                return;
-            }
-
             if (ctx.Member.VoiceState.Channel == null)
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
@@ -1123,7 +632,7 @@ namespace Polaris.Core
                 return;
             }
 
-            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            if (coreCollection.ServerMusicCore.AudioChannel != null && (coreCollection.ServerMusicCore.AudioChannel.Id != ctx.Member.VoiceState.Channel.Id))
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("You are not in the same voice channel!")
@@ -1132,9 +641,8 @@ namespace Polaris.Core
                 return;
             }
 
-            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
-
-            await coreCollection.ServerLavalinkCore.ResumeAsync();
+            coreCollection.ServerMusicCore.SetChannels(ctx.Channel, ctx.Member.VoiceState.Channel);
+            coreCollection.ServerMusicCore.Resume();
         }
 
         [Command("nowplaying")]
@@ -1144,24 +652,6 @@ namespace Polaris.Core
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
 
-            if (!GlobalConfig.Instance.AllowLavalink)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Lavalink is disabled in the config!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("The Lavalink Server is not connected!")
-                    .MakeError());
-
-                return;
-            }
-
             if (ctx.Member.VoiceState.Channel == null)
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
@@ -1171,7 +661,7 @@ namespace Polaris.Core
                 return;
             }
 
-            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            if (coreCollection.ServerMusicCore.AudioChannel != null && (coreCollection.ServerMusicCore.AudioChannel.Id != ctx.Member.VoiceState.Channel.Id))
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("You are not in the same voice channel!")
@@ -1180,9 +670,8 @@ namespace Polaris.Core
                 return;
             }
 
-            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
-
-            await coreCollection.ServerLavalinkCore.NowPlaying();
+            coreCollection.ServerMusicCore.SetChannels(ctx.Channel, ctx.Member.VoiceState.Channel);
+            coreCollection.ServerMusicCore.NowPlaying();
         }
 
         [Command("seek")]
@@ -1191,24 +680,6 @@ namespace Polaris.Core
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
 
-            if (!GlobalConfig.Instance.AllowLavalink)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Lavalink is disabled in the config!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("The Lavalink Server is not connected!")
-                    .MakeError());
-
-                return;
-            }
-
             if (ctx.Member.VoiceState.Channel == null)
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
@@ -1218,7 +689,7 @@ namespace Polaris.Core
                 return;
             }
 
-            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            if (coreCollection.ServerMusicCore.AudioChannel != null && (coreCollection.ServerMusicCore.AudioChannel.Id != ctx.Member.VoiceState.Channel.Id))
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("You are not in the same voice channel!")
@@ -1227,9 +698,8 @@ namespace Polaris.Core
                 return;
             }
 
-            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
-
-            await coreCollection.ServerLavalinkCore.SeekAsync(time);
+            coreCollection.ServerMusicCore.SetChannels(ctx.Channel, ctx.Member.VoiceState.Channel);
+            coreCollection.ServerMusicCore.Seek(time);
         }
 
         [Command("playpartial")]
@@ -1239,24 +709,6 @@ namespace Polaris.Core
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
 
-            if (!GlobalConfig.Instance.AllowLavalink)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Lavalink is disabled in the config!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("The Lavalink Server is not connected!")
-                    .MakeError());
-
-                return;
-            }
-
             if (ctx.Member.VoiceState.Channel == null)
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
@@ -1266,7 +718,7 @@ namespace Polaris.Core
                 return;
             }
 
-            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            if (coreCollection.ServerMusicCore.AudioChannel != null && (coreCollection.ServerMusicCore.AudioChannel.Id != ctx.Member.VoiceState.Channel.Id))
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("You are not in the same voice channel!")
@@ -1275,9 +727,8 @@ namespace Polaris.Core
                 return;
             }
 
-            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
-
-            await coreCollection.ServerLavalinkCore.PlayPartial(from, to);
+            coreCollection.ServerMusicCore.SetChannels(ctx.Channel, ctx.Member.VoiceState.Channel);
+            coreCollection.ServerMusicCore.PlayPartial(from, to);
         }
 
         [Command("queue")]
@@ -1287,25 +738,7 @@ namespace Polaris.Core
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
 
-            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("The Lavalink Server is not connected!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (ctx.Member.VoiceState.Channel == null)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("You are not connected to a voice channel!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            if (coreCollection.ServerMusicCore.AudioChannel != null && (coreCollection.ServerMusicCore.AudioChannel.Id != ctx.Member.VoiceState.Channel.Id))
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("You are not in the same voice channel!")
@@ -1314,9 +747,8 @@ namespace Polaris.Core
                 return;
             }
 
-            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
-
-            await coreCollection.ServerLavalinkCore.ViewQueueAsync(ctx.User);
+            coreCollection.ServerMusicCore.SetChannels(ctx.Channel, ctx.Member.VoiceState.Channel);
+            coreCollection.ServerMusicCore.ViewQueue(ctx.User);
         }
 
         [Command("clearqueue")]
@@ -1326,24 +758,6 @@ namespace Polaris.Core
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
 
-            if (!GlobalConfig.Instance.AllowLavalink)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Lavalink is disabled in the config!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("The Lavalink Server is not connected!")
-                    .MakeError());
-
-                return;
-            }
-
             if (ctx.Member.VoiceState.Channel == null)
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
@@ -1353,7 +767,7 @@ namespace Polaris.Core
                 return;
             }
 
-            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            if (coreCollection.ServerMusicCore.AudioChannel != null && (coreCollection.ServerMusicCore.AudioChannel.Id != ctx.Member.VoiceState.Channel.Id))
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("You are not in the same voice channel!")
@@ -1362,9 +776,8 @@ namespace Polaris.Core
                 return;
             }
 
-            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
-
-            await coreCollection.ServerLavalinkCore.ClearQueueAsync();
+            coreCollection.ServerMusicCore.SetChannels(ctx.Channel, ctx.Member.VoiceState.Channel);
+            coreCollection.ServerMusicCore.ClearQueue();
         }
 
         [Command("loop")]
@@ -1373,24 +786,6 @@ namespace Polaris.Core
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
 
-            if (!GlobalConfig.Instance.AllowLavalink)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Lavalink is disabled in the config!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("The Lavalink Server is not connected!")
-                    .MakeError());
-
-                return;
-            }
-
             if (ctx.Member.VoiceState.Channel == null)
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
@@ -1400,7 +795,7 @@ namespace Polaris.Core
                 return;
             }
 
-            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            if (coreCollection.ServerMusicCore.AudioChannel != null && (coreCollection.ServerMusicCore.AudioChannel.Id != ctx.Member.VoiceState.Channel.Id))
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("You are not in the same voice channel!")
@@ -1409,11 +804,11 @@ namespace Polaris.Core
                 return;
             }
 
-            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
+            coreCollection.ServerMusicCore.SetChannels(ctx.Channel, ctx.Member.VoiceState.Channel);
 
-            if (coreCollection.ServerLavalinkCore.IsLooping)
+            if (coreCollection.ServerMusicCore.IsLooping)
             {
-                coreCollection.ServerLavalinkCore.IsLooping = false;
+                coreCollection.ServerMusicCore.IsLooping = false;
 
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("Looping disabled.")
@@ -1422,7 +817,7 @@ namespace Polaris.Core
             }
             else
             {
-                coreCollection.ServerLavalinkCore.IsLooping = true;
+                coreCollection.ServerMusicCore.IsLooping = true;
 
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("Looping enabled.")
@@ -1437,24 +832,6 @@ namespace Polaris.Core
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
 
-            if (!GlobalConfig.Instance.AllowLavalink)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Lavalink is disabled in the config!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("The Lavalink Server is not connected!")
-                    .MakeError());
-
-                return;
-            }
-
             if (ctx.Member.VoiceState.Channel == null)
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
@@ -1464,7 +841,7 @@ namespace Polaris.Core
                 return;
             }
 
-            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            if (coreCollection.ServerMusicCore.AudioChannel != null && (coreCollection.ServerMusicCore.AudioChannel.Id != ctx.Member.VoiceState.Channel.Id))
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("You are not in the same voice channel!")
@@ -1473,9 +850,8 @@ namespace Polaris.Core
                 return;
             }
 
-            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
-
-            await coreCollection.ServerLavalinkCore.StopAsync();
+            coreCollection.ServerMusicCore.SetChannels(ctx.Channel, ctx.Member.VoiceState.Channel);
+            coreCollection.ServerMusicCore.Stop();
         }
 
         [Command("volume")]
@@ -1485,25 +861,7 @@ namespace Polaris.Core
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
 
-            if (!GlobalConfig.Instance.AllowLavalink)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Lavalink is disabled in the config!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("The Lavalink Server is not connected!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (coreCollection.ServerLavalinkCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
+            if (coreCollection.ServerMusicCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("A song is currently playing.")
@@ -1521,7 +879,7 @@ namespace Polaris.Core
                 return;
             }
 
-            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            if (coreCollection.ServerMusicCore.AudioChannel != null && (coreCollection.ServerMusicCore.AudioChannel.Id != ctx.Member.VoiceState.Channel.Id))
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("You are not in the same voice channel!")
@@ -1530,9 +888,8 @@ namespace Polaris.Core
                 return;
             }
 
-            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
-
-            await coreCollection.ServerLavalinkCore.SetVolumeAsync(volume);
+            coreCollection.ServerMusicCore.SetChannels(ctx.Channel, ctx.Member.VoiceState.Channel);
+            await coreCollection.ServerMusicCore.lavalinkModule.SetVolumeAsync(volume);
         }
 
         [Command("skip")]
@@ -1542,25 +899,7 @@ namespace Polaris.Core
         {
             CoreCollection coreCollection = CoreCollection.Get(ctx);
 
-            if (!GlobalConfig.Instance.AllowLavalink)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Lavalink is disabled in the config!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (!coreCollection.ServerLavalinkCore.IsServerConnected)
-            {
-                await ctx.RespondAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("The Lavalink Server is not connected!")
-                    .MakeError());
-
-                return;
-            }
-
-            if (coreCollection.ServerLavalinkCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
+            if (coreCollection.ServerMusicCore.IsPlaying && !ctx.CheckPerms("dj", out coreCollection))
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("A song is currently playing.")
@@ -1578,7 +917,7 @@ namespace Polaris.Core
                 return;
             }
 
-            if (coreCollection.ServerLavalinkCore.Voice != null && (coreCollection.ServerLavalinkCore.Voice.Id != ctx.Member.VoiceState.Channel.Id))
+            if (coreCollection.ServerMusicCore.AudioChannel != null && (coreCollection.ServerMusicCore.AudioChannel.Id != ctx.Member.VoiceState.Channel.Id))
             {
                 await ctx.RespondAsync(new DiscordEmbedBuilder()
                     .WithAuthor("You are not in the same voice channel!")
@@ -1587,9 +926,8 @@ namespace Polaris.Core
                 return;
             }
 
-            coreCollection.ServerLavalinkCore.SetTextChannel(ctx.Channel);
-
-            await coreCollection.ServerLavalinkCore.SkipAsync();
+            coreCollection.ServerMusicCore.SetChannels(ctx.Channel, ctx.Member.VoiceState.Channel);
+            coreCollection.ServerMusicCore.Skip();
         }
 
         [Command("setstatus")]
@@ -1938,7 +1276,7 @@ namespace Polaris.Core
             }
             catch (Exception ex)
             {
-                Nivera.Log.Error(ex);
+                Log.SendError(ex);
             }
         }
 

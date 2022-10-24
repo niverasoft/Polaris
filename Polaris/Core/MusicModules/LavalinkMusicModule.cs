@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-using DSharpPlus.Entities;
+﻿using DSharpPlus.Entities;
 using DSharpPlus.Interactivity.Enums;
 using DSharpPlus.Interactivity.Extensions;
 using DSharpPlus.Lavalink;
@@ -12,19 +6,30 @@ using DSharpPlus.Lavalink.EventArgs;
 using DSharpPlus.Net;
 using DSharpPlus.VoiceNext;
 
-using Polaris.Pagination;
+using NiveraLib.Logging;
+using NiveraLib;
+
 using Polaris.Config;
 using Polaris.Discord;
 using Polaris.Entities;
 using Polaris.Helpers;
+using Polaris.Pagination;
 
-using Nivera;
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using Polaris.Helpers.Music;
 
-namespace Polaris.Core
+namespace Polaris.Core.MusicModules
 {
-    public class ServerLavalinkCore
+    public class LavalinkMusicModule
     {
-        private ulong _guildId;
+        private bool isPlaying;
+        private LogId logId;
+        private ServerMusicCore core;
 
         public const string TimeSpanFormat = "hh:mm:ss";
 
@@ -38,11 +43,12 @@ namespace Polaris.Core
         private LavalinkExtension Lavalink;
         private LavalinkNodeConnection LavalinkNode;
         private LavalinkGuildConnection LavalinkGuild;
-        private DiscordChannel TextChannel;
-        private DiscordChannel VoiceChannel;
         private LavalinkTrack LavalinkTrack;
 
-        public List<LavalinkTrack> Queue = new List<LavalinkTrack>();
+        private DiscordChannel TextChannel;
+        private DiscordChannel VoiceChannel;
+
+        public ConcurrentQueue<LavalinkTrack> Queue = new ConcurrentQueue<LavalinkTrack>();
 
         public int Volume
         {
@@ -96,7 +102,7 @@ namespace Polaris.Core
 
         public bool IsPlaying
         {
-            get => LavalinkGuild?.CurrentState != null && Track != null;
+            get => isPlaying;
         }
 
         public bool IsLooping { get; set; }
@@ -114,22 +120,24 @@ namespace Polaris.Core
         public DiscordChannel Text
         {
             get => TextChannel;
+            set => TextChannel = value;
         }
 
-        public ServerLavalinkCore(ulong guildId)
+        public LavalinkMusicModule(ServerMusicCore core, ulong guildId)
         {
-            Log.JoinCategory("cores/lavalink");
+            this.core = core;
 
-            _guildId = guildId;
+            logId = new LogId("modules / lavalink", (long)guildId);
 
-            Log.Info($"Initializing Lavalink for guild {guildId}");
+            Log.SendInfo($"Loading ..", logId);
 
             Lavalink = DiscordNetworkHandlers.LavalinkExtension;
             Lavalink.NodeDisconnected += Lavalink_NodeDisconnected;
 
             if (!GlobalConfig.Instance.AllowLavalink)
             {
-                Log.Warn("The Lavalink core is disabled in the config. Launch Polaris with the \"-globalconfig:allowlava=true\" argument to enable it.");
+                Log.SendWarn("The Lavalink core is disabled in the config. Launch Polaris with the \"-globalconfig:allowlava=true\" argument to enable it.", logId);
+
                 return;
             }
 
@@ -144,7 +152,7 @@ namespace Polaris.Core
                 }
                 catch
                 {
-                    Log.Error("Incorrect Lavalink IP format - setting to default (127.0.0.1:2333), make sure your IP and Port are split by a : (IP:Port)");
+                    Log.SendError("Incorrect Lavalink IP format - setting to default (127.0.0.1:2333), make sure your IP and Port are split by a : (IP:Port)", logId);
 
                     IP = "127.0.0.1";
                     Port = 2333;
@@ -156,7 +164,7 @@ namespace Polaris.Core
             }
             else
             {
-                Log.Info($"Trying to connect to a node ..");
+                Log.SendInfo($"Trying to connect to a node ..", logId);
 
                 LavalinkNode = Lavalink.ConnectedNodes.FirstOrDefault().Value;
 
@@ -164,14 +172,14 @@ namespace Polaris.Core
                 {
                     InstallHandlers(LavalinkNode);
 
-                    Log.Info($"Succesfully connected to a node: {LavalinkNode.NodeEndpoint}");
+                    Log.SendInfo($"Succesfully connected to a node: {LavalinkNode.NodeEndpoint}", logId);
                 }
             }
         }
 
         private Task Lavalink_NodeDisconnected(LavalinkNodeConnection sender, NodeDisconnectedEventArgs e)
         {
-            Log.Warn($"Node {e.LavalinkNode.NodeEndpoint} has disconnected. Reason: {(e.IsCleanClose ? "Native Exit" : "Error")}");
+            Log.SendWarn($"Node {e.LavalinkNode.NodeEndpoint} has disconnected. Reason: {(e.IsCleanClose ? "Native Exit" : "SendError")}", logId);
 
             return Task.CompletedTask;
         }
@@ -180,7 +188,7 @@ namespace Polaris.Core
         {
             try
             {
-                Log.Info($"Trying to connect to a node ..");
+                Log.SendInfo($"Trying to connect to a node ..");
 
                 LavalinkNode = await Lavalink.ConnectAsync(new LavalinkConfiguration
                 {
@@ -203,12 +211,12 @@ namespace Polaris.Core
 
                 InstallHandlers(LavalinkNode);
 
-                Log.Info($"Succesfully connected to a node: {LavalinkNode.NodeEndpoint}");
+                Log.SendInfo($"Succesfully connected to a node: {LavalinkNode.NodeEndpoint}", logId);
             }
             catch (Exception ex)
             {
-                Log.Error($"Failed to connect to the lavalink node - make sure it's running on {IP}:{Port} and your password is correct ({Encoding.UTF32.GetString(GlobalConfig.Instance.LavalinkPassword)}");
-                Log.Error(ex);
+                Log.SendError($"Failed to connect to the lavalink node - make sure it's running on {IP}:{Port} and your password is correct ({Encoding.UTF32.GetString(GlobalConfig.Instance.LavalinkPassword)}", logId);
+                Log.SendError(ex);
             }
         }
 
@@ -216,11 +224,10 @@ namespace Polaris.Core
         {
             lavalinkNodeConnection.GuildConnectionCreated += (x, e) =>
             {
-                if (x.Guild.Id != _guildId)
+                if (x.Guild.Id != (ulong)logId.Id)
                     return Task.CompletedTask;
 
-                Log.Verbose($"Connected to guild: {x.Guild.Name}");
-                Log.Arguments(x.CurrentState);
+                Log.SendTrace($"Connected to guild: {x.Guild.Name}", logId);
 
                 TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
                     .WithAuthor($"Joined {x.Channel.Name}")
@@ -234,40 +241,43 @@ namespace Polaris.Core
 
             lavalinkNodeConnection.GuildConnectionRemoved += (x, e) =>
             {
-                if (x.Guild.Id != _guildId)
+                if (x.Guild.Id != (ulong)logId.Id)
                     return Task.CompletedTask;
 
-                Log.Verbose($"Disconnected from guild: {x.Guild.Name}");
+                Log.SendTrace($"Disconnected from guild: {x.Guild.Name}", logId);
 
                 TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
                     .WithAuthor($"Left {x.Channel.Name}")
                     .AddEmoteAuthor(EmotePicker.WaveHandEmote)
                     .WithColor(ColorPicker.InfoColor));
 
-                VoiceChannel = null;
                 TextChannel = null;
+                VoiceChannel = null;
                 LavalinkGuild = null;
                 LavalinkTrack = null;
 
                 IsLooping = false;
+                isPlaying = false;
 
                 return Task.CompletedTask;
             };
 
             lavalinkNodeConnection.LavalinkSocketErrored += (x, e) =>
             {
-                Log.Error($"An error occured while connecting!");
-                Log.Error(e.Exception);
+                Log.SendError($"An error occured while connecting!");
+                Log.SendError(e.Exception);
 
                 return Task.CompletedTask;
             };
 
             lavalinkNodeConnection.PlaybackFinished += async (x, e) =>
             {
-                if (x.Guild.Id != _guildId)
+                if (x.Guild.Id != (ulong)logId.Id)
                     return;
 
-                Log.Verbose($"Finished playing {e.Track.Title} in {x.Guild.Name}: {e.Reason}");
+                Log.SendTrace($"Finished playing {e.Track.Title} in {x.Guild.Name}: {e.Reason}");
+
+                isPlaying = false;
 
                 if (IsLooping)
                 {
@@ -279,21 +289,21 @@ namespace Polaris.Core
                     LavalinkTrack = null;
                 }
 
-                if (Queue.Count > 0)
+                if (Queue.TryDequeue(out LavalinkTrack))
                 {
-                    await LavalinkGuild.PlayAsync(Queue.First());
+                    await LavalinkGuild.PlayAsync(LavalinkTrack);
                     await NowPlaying();
-
-                    Queue.RemoveAt(0);
                 }
             };
 
             lavalinkNodeConnection.PlaybackStarted += (x, e) =>
             {
-                if (x.Guild.Id != _guildId)
+                if (x.Guild.Id != (ulong)logId.Id)
                     return Task.CompletedTask;
 
-                Log.Verbose($"Started playing {e.Track.Title} in {x.Guild.Name}");
+                isPlaying = true;
+
+                Log.SendTrace($"Started playing {e.Track.Title} in {x.Guild.Name}");
 
                 LavalinkGuild = e.Player;
                 LavalinkTrack = e.Track;
@@ -303,14 +313,16 @@ namespace Polaris.Core
 
             lavalinkNodeConnection.TrackException += (x, e) =>
             {
-                if (x.Guild.Id != _guildId)
+                if (x.Guild.Id != (ulong)logId.Id)
                     return Task.CompletedTask;
 
                 TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Playback Error")
+                    .WithAuthor("Playback")
                     .WithTitle("An error occured while playing this track.")
                     .WithFooter(e.Error)
                     .MakeError());
+
+                isPlaying = false;
 
                 return Task.CompletedTask;
             };
@@ -332,7 +344,7 @@ namespace Polaris.Core
                 if (lavaTrack == null)
                 {
                     await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
-                        .WithAuthor("Playback Error")
+                        .WithAuthor("Playback")
                         .WithTitle($"Failed to load track, skipping: {musicTrack.Title}.")
                         .MakeWarn());
 
@@ -352,12 +364,12 @@ namespace Polaris.Core
 
         public async Task<LavalinkTrack> FindTrack(string search)
         {
-            LavalinkLoadResult res = await LavalinkGuild.GetTracksAsync(search);
+            IResult searchRes = await MusicSearch.Search(search);
 
-            if (res.LoadResultType == LavalinkLoadResultType.LoadFailed || res.LoadResultType == LavalinkLoadResultType.NoMatches)
+            if (searchRes is ErrorSearchResult)
                 return null;
 
-            return res.Tracks.FirstOrDefault();
+            return await LoadLavalink(searchRes.SelectedTrack);
         }
 
         public async Task JoinAsync(DiscordChannel voiceChannel, DiscordChannel textChannel)
@@ -383,7 +395,7 @@ namespace Polaris.Core
             if (volume > 100)
             {
                 await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
-                    .WithAuthor($"Volume Error")
+                    .WithAuthor($"Volume")
                     .WithTitle("You cannot set the volume higher than 100%!")
                     .MakeError());
 
@@ -393,7 +405,7 @@ namespace Polaris.Core
             if (volume < 0)
             {
                 await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Volume Error")
+                    .WithAuthor("Volume")
                     .WithTitle("You cannot set the volume lower than 0%!")
                     .MakeError());
 
@@ -414,7 +426,7 @@ namespace Polaris.Core
             if (IsPaused)
             {
                 await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Playback Error")
+                    .WithAuthor("Playback")
                     .WithTitle("This track is already paused!")
                     .MakeWarn());
 
@@ -434,7 +446,7 @@ namespace Polaris.Core
             if (!IsPaused)
             {
                 await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Playback Error")
+                    .WithAuthor("Playback")
                     .WithTitle("This track is not paused!")
                     .MakeWarn());
 
@@ -490,7 +502,7 @@ namespace Polaris.Core
             await LavalinkGuild.ResumeAsync();
 
             await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
-                .WithAuthor($"Started playing from {time.ToString()}")
+                .WithAuthor($"Started playing from {time}")
                 .WithColor(ColorPicker.InfoColor)
                 .AddEmoteAuthor(time > current ? EmotePicker.TrackForwardEmote : EmotePicker.TrackReverseEmote));
         }
@@ -537,16 +549,19 @@ namespace Polaris.Core
                 .WithAuthor("Queue cleared, playing your playlist.")
                 .MakeInfo());
 
-            Queue.AddRange(tracks);
+            var toPlay = tracks.First();
 
-            await LavalinkGuild.PlayAsync(Queue.First());
+            tracks.RemoveAt(0);
 
-            Queue.RemoveAt(0);
+            foreach (var track in tracks)
+                Queue.Enqueue(track);
+
+            await LavalinkGuild.PlayAsync(toPlay);
         }
 
         public async Task SkipAsync()
         {
-            if (Queue.Count < 1)
+            if (!Queue.TryDequeue(out var nextTrack))
             {
                 await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
                     .WithAuthor("There is nothing in the queue, stopping playback.")
@@ -564,9 +579,7 @@ namespace Polaris.Core
             IsLooping = false;
 
             await LavalinkGuild.StopAsync();
-            await LavalinkGuild.PlayAsync(Queue.First());
-
-            Queue.RemoveAt(0);
+            await LavalinkGuild.PlayAsync(nextTrack);
 
             await NowPlaying();
 
@@ -575,96 +588,151 @@ namespace Polaris.Core
 
         public async Task PlayAsync(string searchOrUrl, DiscordChannel voice, DiscordChannel text, DiscordUser author = null)
         {
-            VoiceChannel = voice;
-            TextChannel = text;
-
-            await JoinAsync(VoiceChannel, TextChannel);
-
-            LavalinkLoadResult res = await LavalinkGuild.GetTracksAsync(searchOrUrl);
-
-            if (res.LoadResultType == LavalinkLoadResultType.LoadFailed)
+            try
             {
-                DiscordEmbedBuilder builder = new DiscordEmbedBuilder().WithAuthor("Search Failed");
+                VoiceChannel = voice;
+                TextChannel = text;
 
-                if (!string.IsNullOrEmpty(res.Exception.Message))
-                    builder.WithTitle(res.Exception.Message);
+                await JoinAsync(VoiceChannel, TextChannel);
 
-                builder.MakeError();
+                IResult searchResult = await MusicSearch.Search(searchOrUrl);
 
-                await TextChannel?.SendMessageAsync(builder);
+                while (CommandExtensions.DeleteMusic.TryDequeue(out var msg))
+                    await msg.DeleteAsync();
 
-                return;
-            }
+                if (searchResult is ErrorSearchResult error)
+                {
+                    await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
+                        .WithAuthor("Search Failed")
+                        .WithTitle(error.Reason)
+                        .MakeError());
 
-            if (res.LoadResultType == LavalinkLoadResultType.NoMatches)
-            {
-                await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Search Failed")
-                    .WithTitle("No tracks match your search.")
-                    .MakeError());
+                    return;
+                }
 
-                return;
-            }
+                if (searchResult is PlaylistSearchResult playlist)
+                {
+                    Log.SendTrace("Received PlaylistSearchResult");
+                    Log.SendJson(playlist);
 
-            LavalinkTrack trackToPlay = null;
+                    var music = playlist.SelectedTrack;
+                    var lavaTrack = await LoadLavalink(music);
+                    var loadedTracks = new List<LavalinkTrack>();
 
-            if (res.LoadResultType == LavalinkLoadResultType.PlaylistLoaded)
-            {
-                trackToPlay = res.Tracks.ElementAtOrDefault(res.PlaylistInfo.SelectedTrack);
+                    foreach (var track in playlist.OtherTracks)
+                    {
+                        Log.SendTrace($"Converting track: {track.Title}");
 
-                await TextChannel?.SendPaginatedMessageAsync(author, PageParser.SplitToPages(res.Tracks.ToList(), new DiscordEmbedBuilder()
-                    .WithAuthor($"Playlist loaded: {res.PlaylistInfo.Name} ({res.Tracks.Count()}).")
-                    .WithTitle($"Playing from: [{trackToPlay.Title}]({trackToPlay.Uri.AbsoluteUri})")
-                    .MakeInfo()), PaginationBehaviour.WrapAround, ButtonPaginationBehavior.Disable);
+                        var lava = await LoadLavalink(track);
+
+                        if (lava != null)
+                        {
+                            Log.SendTrace($"Converted track: {lava.Title}");
+
+                            loadedTracks.Add(lava);
+                        }
+                        else
+                        {
+                            Log.SendError("Failed to convert track.");
+                        }
+                    }
+
+                    await TextChannel?.SendPaginatedMessageAsync(author, PageParser.SplitToPages(loadedTracks, new DiscordEmbedBuilder()
+                        .WithTitle($"{playlist.Name} ({playlist.OtherTracks.Count + 1}).")
+                        .WithDescription($"Playing from: [{lavaTrack.Title}]({lavaTrack.Uri.AbsoluteUri})")
+                        .WithFooter($"By: [{searchResult.SelectedTrack.Author}]({searchResult.SelectedTrack.AuthorUrl})")
+                        .WithThumbnail(playlist.ThumbnailUrl)
+                        .AddEmoteTitle(EmotePicker.PlayEmote)
+                        .WithColor(ColorPicker.SuccessColor)), PaginationBehaviour.WrapAround, ButtonPaginationBehavior.Disable);
+
+                    if (IsPlaying)
+                    {
+                        TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
+                            .WithTitle("There's a song currently playing, request queued.")
+                            .AddField("Title", $"[{lavaTrack.Title}]({lavaTrack.Uri.AbsoluteUri})", true)
+                            .AddField("Duration", searchResult.SelectedTrack.Duration.ToString(), true)
+                            .WithFooter($"By: [{searchResult.SelectedTrack.Author}]({searchResult.SelectedTrack.AuthorUrl})")
+                            .WithThumbnail(searchResult.SelectedTrack.Thumbnail)
+                            .AddEmoteTitle(EmotePicker.PlayEmote)
+                            .WithColor(ColorPicker.SuccessColor));
+
+                        Queue.Enqueue(lavaTrack);
+
+                        foreach (var trrr in loadedTracks.Where(x => x.Identifier != lavaTrack.Identifier))
+                            Queue.Enqueue(trrr);
+
+                        return;
+                    }
+                    else
+                    {
+                        TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
+                                .WithTitle("Now Playing")
+                                .AddField("Title", $"[{lavaTrack.Title}]({lavaTrack.Uri.AbsoluteUri})", true)
+                                .AddField("Duration", searchResult.SelectedTrack.Duration.ToString(), true)
+                                .WithFooter($"By: [{searchResult.SelectedTrack.Author}]({searchResult.SelectedTrack.AuthorUrl})")
+                                .WithThumbnail(searchResult.SelectedTrack.Thumbnail)
+                                .AddEmoteTitle(EmotePicker.PlayEmote)
+                                .WithColor(ColorPicker.SuccessColor));
+
+                        LavalinkTrack = lavaTrack;
+
+                        foreach (var trrr in loadedTracks.Where(x => x.Identifier != lavaTrack.Identifier))
+                            Queue.Enqueue(trrr);
+
+                        await LavalinkGuild.PlayAsync(lavaTrack);
+                    }
+
+                    return;
+                }
+
+                Log.SendTrace("Received other search result.");
+                Log.SendJson(searchResult);
+
+                var lavaTrackToPlay = await LoadLavalink(searchResult.SelectedTrack);
+
+                if (lavaTrackToPlay == null)
+                {
+                    await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
+                        .WithAuthor("Playback Failed")
+                        .WithTitle("Failed to select the track to play.")
+                        .MakeError());
+
+                    return;
+                }
 
                 if (IsPlaying)
-                    Queue.Add(trackToPlay);
+                {
+                    TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
+                        .WithTitle("There's a song currently playing, request queued.")
+                        .AddField("Title", $"[{lavaTrackToPlay.Title}]({lavaTrackToPlay.Uri.AbsoluteUri})", true)
+                        .AddField("Duration", searchResult.SelectedTrack.Duration.ToString(), true)
+                        .WithFooter($"By: [{searchResult.SelectedTrack.Author}]({searchResult.SelectedTrack.AuthorUrl})")
+                        .WithThumbnail(searchResult.SelectedTrack.Thumbnail)
+                        .AddEmoteTitle(EmotePicker.PlayEmote)
+                        .WithColor(ColorPicker.SuccessColor));
 
-                Queue.AddRange(res.Tracks.Where(x => x.Identifier != trackToPlay.Identifier));
-            }
-            else
-            {
-                trackToPlay = res.Tracks.First();
-            }
+                    Queue.Enqueue(lavaTrackToPlay);
 
-            if (IsPlaying)
-            {
+                    return;
+                }
+
                 TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("There's a song currently playing, request queued.")
-                    .AddField("Title", $"[{trackToPlay.Title}]({trackToPlay.Uri.AbsoluteUri})", true)
-                    .AddField("Author", trackToPlay.Author, true)
-                    .AddField("Duration", trackToPlay.Length.ToString(), true)
-                    .AddField("Position", LavalinkGuild.CurrentState.PlaybackPosition.ToString(), true)
-                    .AddEmoteAuthor(EmotePicker.PlayEmote)
-                    .WithColor(ColorPicker.InfoColor));
+                        .WithTitle("Now Playing")
+                        .AddField("Title", $"[{lavaTrackToPlay.Title}]({lavaTrackToPlay.Uri.AbsoluteUri})", true)
+                        .AddField("Duration", searchResult.SelectedTrack.Duration.ToString(), true)
+                        .WithFooter($"By: [{searchResult.SelectedTrack.Author}]({searchResult.SelectedTrack.AuthorUrl})")
+                        .WithThumbnail(searchResult.SelectedTrack.Thumbnail)
+                        .AddEmoteTitle(EmotePicker.PlayEmote)
+                        .WithColor(ColorPicker.SuccessColor));
 
-                Queue.Add(trackToPlay);
+                LavalinkTrack = lavaTrackToPlay;
 
-                return;
+                await LavalinkGuild.PlayAsync(lavaTrackToPlay);
             }
-
-            if (trackToPlay == null)
+            catch (Exception ex)
             {
-                await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("Playback Failed")
-                    .WithTitle("Failed to select the track to play.")
-                    .MakeError());
-
-                return;
+                Log.SendException(ex);
             }
-
-            TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
-                .WithAuthor("Now Playing")
-                .AddField("Title", $"[{trackToPlay.Title}]({trackToPlay.Uri.AbsoluteUri})", true)
-                .AddField("Author", trackToPlay.Author, true)
-                .AddField("Duration", trackToPlay.Length.ToString(), true)
-                .AddField("Position", LavalinkGuild.CurrentState.PlaybackPosition.ToString(), true)
-                .AddEmoteAuthor(EmotePicker.PlayEmote)
-                .WithColor(ColorPicker.InfoColor));
-
-            LavalinkTrack = trackToPlay;
-
-            await LavalinkGuild.PlayAsync(trackToPlay);
         }
 
         public async Task ViewQueueAsync(DiscordUser author)
@@ -678,7 +746,7 @@ namespace Polaris.Core
                 return;
             }
 
-            await TextChannel?.SendPaginatedMessageAsync(author, PageParser.SplitToPages(Queue, new DiscordEmbedBuilder()
+            await TextChannel?.SendPaginatedMessageAsync(author, PageParser.SplitToPages(Queue.ToList(), new DiscordEmbedBuilder()
                 .WithAuthor($"Your queue ({Queue.Count}):")
                 .WithColor(ColorPicker.InfoColor)
                 .AddEmoteAuthor(EmotePicker.CycloneEmote)), PaginationBehaviour.WrapAround, ButtonPaginationBehavior.Disable);
@@ -692,6 +760,16 @@ namespace Polaris.Core
                 .WithAuthor("Queue cleared!")
                 .AddEmoteAuthor(EmotePicker.PopEmote)
                 .WithColor(ColorPicker.InfoColor));
+        }
+
+        public async Task<LavalinkTrack> LoadLavalink(IMusicTrack musicTrack)
+        {
+            var result = await LavalinkGuild.GetTracksAsync(musicTrack.Url, LavalinkSearchType.Youtube);
+
+            if (result.LoadResultType == LavalinkLoadResultType.LoadFailed || result.LoadResultType == LavalinkLoadResultType.NoMatches)
+                return null;
+
+            return result.Tracks.FirstOrDefault();
         }
 
         public async Task StopAsync()

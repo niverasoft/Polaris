@@ -12,6 +12,9 @@ namespace Polaris.Config
 
         public string LogTimestampFormat { get; set; } = "t";
 
+        public string SpotifyClientId { get; set; }
+        public string SpotifyClientSecret { get; set; }
+
         public char DefaultPrefix { get; set; } = '!';
 
         public ulong BotOwnerId { get; set; }

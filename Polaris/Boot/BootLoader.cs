@@ -1,161 +1,68 @@
-﻿using Nivera;
-using Nivera.Utils;
+﻿using NiveraLib;
+using NiveraLib.Logging;
+using NiveraLib.Utilities;
 
 using System;
 using System.IO;
 using System.Net;
+using System.Text;
 using System.Threading.Tasks;
 
-using ShellProgressBar;
-
 using Polaris.Config;
-using System.Text;
 
 namespace Polaris.Boot
 {
     public static class BootLoader
     {
-        public const string BaseDownloadLink = "https://cdn.nivera.tech/polaris";
+        private static LogId LogId = new LogId("startup / bootLoader", 101);
+        private static SystemInfo system = new SystemInfo();
 
-        static BootLoader()
-        {
-            Log.JoinCategory("bootloader");
-        }
+        public const string BaseDownloadLink = "https://cdn.nivera.tech/polaris";
 
         public static async Task Commence(string[] args)
         {
-            Log.JoinCategory("bootloader");
-            Log.Info("Hi! Loading Polaris ..");
+            Log.SendInfo($"Hello there!", LogId);
+            Log.SendInfo($"Attempting to load the bot ..", LogId);
 
             if (GlobalConfig.Instance.CheckPackages)
             {
-                if (SystemHelper.IsLinux)
+                if (system.IsLinux)
                 {
-                    Log.Info("Linux system detected. Checking for installed OpenJDK packages.");
+                    Log.SendInfo("Detected a Linux-based operating system! The bot will now proceed to check for missing packages.", LogId);
 
-                    string packages = SystemHelper.GetCommandOutput("apt list openjdk* --installed");
-
-                    bool isInstalled = packages.Contains("openjdk-");
-
-                    Log.Verbose(packages);
-
-                    if (!isInstalled)
-                    {
-                        Log.Warn("Failed to find a compatible OpenJDK version. Installing ..");
-
-                        packages = SystemHelper.GetCommandOutput("sudo apt install -y openjdk-17-jre");
-
-                        if (packages.ToLower().Contains("error") || packages.ToLower().Contains("fail"))
-                        {
-                            Log.Error("Failed to install the openjdk-17-jre package, skipping. You will have to install it manually.");
-                            Log.Error(packages);
-                        }
-                        else
-                        {
-                            Log.Info(packages);
-                            Log.Info("Succesfully installed openjdk-17-jre!");
-                        }
-                    }
-
-                    Log.Info("Linux system detected. Checking for installed libopus packages.");
-
-                    Log.Verbose(SystemHelper.GetCommandOutput("sudo add-apt-repository ppa:kepstin/opus"));
-                    Log.Verbose(SystemHelper.GetCommandOutput("sudo add-apt-repository ppa:chris-lea/libsodium"));
-                    Log.Verbose(SystemHelper.GetCommandOutput("sudo apt update"));
-
-                    packages = SystemHelper.GetCommandOutput("apt list *opus* --installed");
-
-                    isInstalled = packages.Contains("libopus-dev");
-
-                    Log.Verbose(packages);
-
-                    if (!isInstalled)
-                    {
-                        Log.Warn("Failed to find a compatible libopus version. Installing ..");
-
-                        packages = SystemHelper.GetCommandOutput("sudo apt install -y libopus-dev");
-
-                        if (packages.ToLower().Contains("error") || packages.ToLower().Contains("fail"))
-                        {
-                            Log.Error("Failed to install the libopus-dev package, skipping. You will have to install it manually.");
-                            Log.Error(packages);
-                        }
-                        else
-                        {
-                            Log.Info(packages);
-                            Log.Info("Succesfully installed libopus-dev!");
-                        }
-                    }
-
-                    Log.Info("Linux system detected. Checking for installed libsodium packages.");
-
-                    packages = SystemHelper.GetCommandOutput("apt list *sodium* --installed");
-
-                    isInstalled = packages.Contains("libsodium-dev");
-
-                    Log.Verbose(packages);
-
-                    if (!isInstalled)
-                    {
-                        Log.Warn("Failed to find a compatible libsodium version. Installing ..");
-
-                        packages = SystemHelper.GetCommandOutput("sudo apt install -y libsodium-dev");
-
-                        if (packages.ToLower().Contains("error") || packages.ToLower().Contains("fail"))
-                        {
-                            Log.Error("Failed to install the libsodium-dev package, skipping. You will have to install it manually.");
-                            Log.Error(packages);
-                        }
-                        else
-                        {
-                            Log.Info(packages);
-                            Log.Info("Succesfully installed libsodium-dev!");
-                        }
-                    }
+                    CheckPackageByName("screen");
+                    CheckPackageByName("openjdk-17-jre");
+                    CheckPackageByName("ffmpeg");
+                    CheckPackageByName("libopus-dev");
+                    CheckPackageByName("libsodium-dev");
                 }
 
                 if (!File.Exists($"{Directory.GetCurrentDirectory()}/Lavalink.jar"))
                 {
-                    Log.Error("Failed to find Lavalink.jar! Downloading latest version ..");
+                    Log.SendWarn($"Failed to locate the Lavalink executable server, downloading ..", LogId);
 
                     using (var web = new WebClient())
-                    using (var bar = new ProgressBar(100, "Downloading Lavalink.jar .."))
                     {
-                        var progress = bar.AsProgress<int>();
-
                         web.DownloadProgressChanged += (x, e) =>
                         {
-                            progress.Report(e.ProgressPercentage);
+                            Log.SendInfo($"Download progress: {e.ProgressPercentage} % (received {e.BytesReceived} bytes out of {e.TotalBytesToReceive} bytes)", LogId);
                         };
 
                         await web.DownloadFileTaskAsync($"{BaseDownloadLink}/lavalink_latest.jar", $"{Directory.GetCurrentDirectory()}/Lavalink.jar");
 
-                        bar.Dispose();
-                    }
-
-                    if (File.Exists($"{Directory.GetCurrentDirectory()}/Lavalink.jar"))
-                    {
-                        Log.Info("Downloaded the latest version of Lavalink.");
-                    }
-                    else
-                    {
-                        Log.Error($"Failed to download the latest version of Lavalink! You will have to download it yourself. ({BaseDownloadLink}/lavalink_latest.jar). Make sure it's name is Lavalink.jar!");
+                        Log.SendInfo($"Lavalink server executable was downloaded in the bot's directory.", LogId);
                     }
                 }
 
                 if (!File.Exists($"{Directory.GetCurrentDirectory()}/application.yml"))
                 {
-                    Log.Error("Lavalink requires a config to run! Generating with provided IP and password ..");
+                    Log.SendWarn($"Failed to locate the Lavalink's server configuration, downloading ..", LogId);
 
                     using (var web = new WebClient())
-                    using (var bar = new ProgressBar(2, "Downloading Lavalink configuration .."))
                     {
-                        web.DownloadFileCompleted += (x, e) =>
-                        {
-                            bar.Tick("Generating configuration file ..");
-                        };
-
                         await web.DownloadFileTaskAsync($"{BaseDownloadLink}/lavalink_config.yml", $"{Directory.GetCurrentDirectory()}/application.yml");
+
+                        Log.SendInfo($"Configuration file downloaded, modifying password and address ..", LogId);
 
                         string text = File.ReadAllText($"{Directory.GetCurrentDirectory()}/application.yml");
                         string ip = Encoding.UTF32.GetString(GlobalConfig.Instance.LavalinkAddress);
@@ -167,13 +74,7 @@ namespace Polaris.Boot
                         text.Replace("%PASSWD%", passwd);
 
                         File.WriteAllText($"{Directory.GetCurrentDirectory()}/application.yml", text);
-
-                        bar.Dispose();
                     }
-                }
-                else
-                {
-                    Log.Info("Lavalink configuration file found.");
                 }
             }
 
@@ -181,25 +82,32 @@ namespace Polaris.Boot
             {
                 if (GlobalConfig.Instance.LavalinkAtStart)
                 {
-                    Log.Info("Starting Lavalink ..");
+                    var ticks = DateTime.Now.Ticks;
 
-                    SystemHelper.GetCommandOutput($"screen -dmS polarisLavalink java -jar {Directory.GetCurrentDirectory()}/Lavalink.jar");
+                    Log.SendInfo($"Attempting to launch the Lavalink server in a new Screen Session .. (lava{ticks})", LogId);
 
-                    Log.Info("Lavalink process started on a new screen session (polarisLavalink).");
+                    LinuxCommand.ReadOutput(LinuxCommand.StartInScreen($"lava{ticks}", $"cd {Directory.GetCurrentDirectory()} && java -jar Lavalink.jar"));                 
                 }
             }
             catch (Exception ex)
             {
-                Log.Error("Failed to start Lavalink.");
-                Log.Error(ex);
+                Log.SendException(ex, LogId);
             }
 
             StartupArguments.Parse(args);
         }
 
-        public static void Kill()
+        public static void CheckPackageByName(string packageName)
         {
-            SystemHelper.GetCommandOutput("screen -S polarisLavalink -X quit");
+            if (!LinuxCommand.ReadOutput(LinuxCommand.ListInstalledAptPackages()).Contains(packageName))
+            {
+                Log.SendWarn($"Looks like a vital package is missing: {packageName}, attempting installation. You may be asked for a password.", LogId);
+
+                var output = LinuxCommand.ReadOutput(LinuxCommand.InstallAptPackage(packageName));
+
+                Log.SendInfo($"Attempted installation, command output:", LogId);
+                Log.SendInfo(output, LogId);
+            }
         }
     }
 }

@@ -9,16 +9,17 @@ using DSharpPlus.Entities;
 using Polaris.Config;
 using Polaris.Boot;
 using Polaris.Discord;
-
-using Nivera;
 using Polaris.Entities;
-using Polaris.CustomCommands;
-using Microsoft.VisualBasic;
+
+using NiveraLib;
+using NiveraLib.Logging;
 
 namespace Polaris.Core
 {
     public class ServerCore
     {
+        private LogId logId;
+
         public int CoreId { get; set; }
 
         public DiscordClient Client { get; set; }
@@ -32,12 +33,11 @@ namespace Polaris.Core
         {
             try
             {
+                logId = new LogId($"cores / main / {guild.Id}");
                 CoreCollection = new CoreCollection(this, serverConfig, serverCache, guild.Id);
                 Client = client;
                 Guild = guild;
                 CoreId = GetNextServerCoreId();
-
-                Log.JoinCategory($"cores/server");
 
                 ConfigManager.ConfigList[Guild.Id] = CoreCollection.ServerConfig;
                 ConfigManager.CacheList[Guild.Id] = CoreCollection.ServerCache;
@@ -45,19 +45,26 @@ namespace Polaris.Core
 
                 InstallEventHandlers();
               
-                if (!Program.DiscordLogger.ChannelFound && GlobalConfig.Instance.DiscordLogOutputChannelId != 0 && GlobalConfig.Instance.AllowDiscordLogOutput)
-                    Task.Run(async () => await Program.DiscordLogger.FindChannel(GlobalConfig.Instance.DiscordLogOutputChannelId));
-
-                Log.Info($"Caching Discord members for {guild.Name}");
-
-                foreach (var member in guild.Members.Values)
+                if (Program.DiscordLogger.Channel == null)
                 {
-                    Task.Run(() => CachedDiscordMember.Cache(member));
+                    if (GlobalConfig.Instance.DiscordLogOutputChannelId != 0)
+                    {
+                        if (GlobalConfig.Instance.AllowDiscordLogOutput)
+                        {
+                            if (guild.Channels.Any(x => x.Key == GlobalConfig.Instance.DiscordLogOutputChannelId))
+                            {
+                                Program.DiscordLogger.SetLogChannel(guild.Channels[GlobalConfig.Instance.DiscordLogOutputChannelId]);
+                            }
+                        }
+                    }
                 }
+
+                //foreach (var member in guild.Members.Values)
+                //    Task.Run(() => CachedDiscordMember.Cache(member));
             }
             catch (Exception ex)
             {
-                Log.Error(ex);
+                Log.SendError(ex);
             }
         }
 
@@ -65,13 +72,11 @@ namespace Polaris.Core
         {
             try
             {
+                logId = new LogId($"cores / {CoreId} / {guild.Id}");
                 CoreCollection = new CoreCollection(this, new ServerConfig(), new ServerCache(), guild.Id);
-                CoreCollection.ServerConfig.BotOwner = guild.Owner != null ? guild.Owner.Id : guild.Members.Where(x => x.Value.Roles.Any(z => z.CheckPermission(Permissions.Administrator) == PermissionLevel.Allowed)).First().Key;
                 Client = client;
                 Guild = guild;
                 CoreId = GetNextServerCoreId();
-
-                Log.JoinCategory($"cores/server");
 
                 ConfigManager.ConfigList[Guild.Id] = CoreCollection.ServerConfig;
                 ConfigManager.CacheList[Guild.Id] = CoreCollection.ServerCache;
@@ -79,20 +84,32 @@ namespace Polaris.Core
 
                 InstallEventHandlers();
 
-                if (!Program.DiscordLogger.ChannelFound && GlobalConfig.Instance.DiscordLogOutputChannelId != 0 && GlobalConfig.Instance.AllowDiscordLogOutput)
-                    Task.Run(async () => await Program.DiscordLogger.FindChannel(GlobalConfig.Instance.DiscordLogOutputChannelId));
-
-                Log.Info($"Caching Discord members for {guild.Name}");
-
-                foreach (var member in guild.Members.Values)
+                if (Program.DiscordLogger.Channel == null)
                 {
-                    Task.Run(() => CachedDiscordMember.Cache(member));
+                    if (GlobalConfig.Instance.DiscordLogOutputChannelId != 0)
+                    {
+                        if (GlobalConfig.Instance.AllowDiscordLogOutput)
+                        {
+                            if (guild.Channels.Any(x => x.Key == GlobalConfig.Instance.DiscordLogOutputChannelId))
+                            {
+                                Program.DiscordLogger.SetLogChannel(guild.Channels[GlobalConfig.Instance.DiscordLogOutputChannelId]);
+                            }
+                        }
+                    }
                 }
+
+                //foreach (var member in guild.Members.Values)
+                //    Task.Run(() => CachedDiscordMember.Cache(member));
             }
             catch (Exception ex)
             {
-                Log.Error(ex);
+                Log.SendError(ex);
             }
+        }
+
+        public void Destroy()
+        {
+
         }
 
         public void InstallEventHandlers()
@@ -119,16 +136,7 @@ namespace Polaris.Core
                         var cmdObj = DiscordNetworkHandlers.CommandsNextExtension.FindCommand(cmd, out var args);
 
                         if (cmdObj == null)
-                        {
-                            if (CustomCommandManager.IsEnabled && CustomCommandManager.TryGetCommand(cmd, out var customCommand))
-                            {
-                                await CustomCommandManager.TryInvokeCommand(args ?? "", e.Guild.Members[e.Author.Id], e.Message, customCommand);
-
-                                return;
-                            }
-
                             return;
-                        }
 
                         await DiscordNetworkHandlers.CommandsNextExtension.ExecuteCommandAsync(
                             DiscordNetworkHandlers.CommandsNextExtension.CreateContext(
@@ -139,7 +147,7 @@ namespace Polaris.Core
                     }
                     catch (Exception ex)
                     {
-                        Log.Error(ex);
+                        Log.SendError(ex, logId);
                     }
                 });
 

@@ -1,10 +1,8 @@
 ﻿using Polaris.Boot;
 using Polaris.Entities;
+
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Polaris.Core
 {
@@ -32,7 +30,6 @@ namespace Polaris.Core
                     continue;
 
                 log.RemaningSeconds--;
-
                 log.LastUpdateAt = DateTime.Now;
 
                 if (log.RemaningSeconds <= 0)

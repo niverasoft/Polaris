@@ -131,7 +131,7 @@
     <comment>An ASCII art version of Polaris.</comment>
   </data>
   <data name="Version" xml:space="preserve">
-    <value>1-0-5-A-TES</value>
+    <value>1.0.6.T.development</value>
     <comment>The bot's version, which is then parsed.</comment>
   </data>
 </root>

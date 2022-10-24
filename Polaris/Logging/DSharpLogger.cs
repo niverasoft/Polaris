@@ -2,46 +2,50 @@
 
 using Microsoft.Extensions.Logging;
 
+using NiveraLib.Logging;
+
 using Polaris.Config;
 
 namespace Polaris.Logging
 {
-    public class DSharpLogger : ILoggerFactory, ILogger
+    public class DSharpLogger : ILoggerFactory, Microsoft.Extensions.Logging.ILogger
     {
-        public DSharpLogger()
-        {
-            Nivera.Log.JoinCategory("discord");
-        }
-
         public void AddProvider(ILoggerProvider provider) { }
         public IDisposable BeginScope<TState>(TState state) { return null; }
         public void Dispose() { }
-        public ILogger CreateLogger(string categoryName) => this;
+        public Microsoft.Extensions.Logging.ILogger CreateLogger(string categoryName) => this;
         public bool IsEnabled(LogLevel logLevel) => logLevel == LogLevel.Debug ? GlobalConfig.Instance.Debug : (logLevel == LogLevel.Trace ? GlobalConfig.Instance.Verbose : true);
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
         {
             string msg = formatter(state, exception);
 
-            if (logLevel == LogLevel.None || logLevel == LogLevel.Trace || 
-                ((eventId.Name == "RatelimitDiag" || eventId.Name == "RatelimitPreemptive" || eventId.Name == "VoiceKeepalive") 
-                && (eventId.Id == 115 || eventId.Id == 116 || eventId.Id == 304)))
+            // either spammy or useless
+            if (logLevel == LogLevel.None || 
+                (eventId.Id >= 114 && eventId.Id <= 116) || eventId.Id == 304 ||
+                (eventId.Id >= 104 && eventId.Id <=  107) || eventId.Id == 109 ||
+                eventId.Id == 117 || eventId.Id == 118 || eventId.Id == 119 ||
+                (eventId.Id >= 123 && eventId.Id <= 127) || eventId.Id == 406 ||
+                eventId.Id == 407 || eventId.Id == 403)
                 return;
 
+            if (logLevel == LogLevel.Critical)
+                NiveraLib.Log.SendFatal(msg, new LogId(eventId.Name, eventId.Id));
+
             if (logLevel == LogLevel.Error)
-                Nivera.Log.Error($"[ {eventId.Name} / {eventId.Id} ] {msg}");
+                NiveraLib.Log.SendError(msg, new LogId(eventId.Name, eventId.Id));
 
             if (logLevel == LogLevel.Information)
-                Nivera.Log.Info($"[ {eventId.Name} / {eventId.Id} ] {msg}");
+                NiveraLib.Log.SendInfo(msg, new LogId(eventId.Name, eventId.Id));
 
             if (logLevel == LogLevel.Debug)
-                Nivera.Log.Debug($"[ {eventId.Name} / {eventId.Id} ] {msg}");
+                NiveraLib.Log.SendDebug(msg, new LogId(eventId.Name, eventId.Id));
 
             if (logLevel == LogLevel.Warning)
-                Nivera.Log.Warn($"[ {eventId.Name} / {eventId.Id} ] {msg}");
+                NiveraLib.Log.SendWarn(msg, new LogId(eventId.Name, eventId.Id));
 
-            if (logLevel == LogLevel.Critical)
-                Nivera.Log.Error($"[ {eventId.Name} / {eventId.Id} ] {msg}");
+            if (logLevel == LogLevel.Trace)
+                NiveraLib.Log.SendTrace(msg, new LogId(eventId.Name, eventId.Id));
         }
     }
 }

@@ -1,45 +1,38 @@
 ﻿using System;
 using System.Threading.Tasks;
-
-using Nivera;
+using System.Collections.Generic;
 
 using Polaris.Properties;
 using Polaris.Config;
 using Polaris.Discord;
-using Polaris.Plugins;
 using Polaris.Logging;
-using Polaris.CustomCommands;
-using Polaris.Reporting;
+
+using NiveraLib;
+using NiveraLib.Timers;
+using NiveraLib.Versioning;
+using NiveraLib.Logging;
+using NiveraLib.Logging.Features;
+using Polaris.Helpers.Music;
 
 namespace Polaris.Boot
 {
     public static class Program
     {
-        public static int UptimeSeconds { get; set; }
-        public static Reporter UptimeCounter { get; set; }
-        public static PolarisLogger PolarisLogger { get; set; }
-        public static DiscordLogger DiscordLogger { get; set; }
-        public static FileLogger FileLogger { get; set; }
+        public static LogId LogID = new LogId("boot / core", 100);
 
-        static Program()
-        {
-            Log.JoinCategory("main");
-        }
+        public static double UptimeSeconds { get; set; }
+        public static Timer UptimeCounter { get; set; }
+        public static DiscordLogger DiscordLogger { get; set; }
+
+        public static NiveraLib.Versioning.Version Version { get; set; }
 
         public static void Kill(string message = null)
         {
-            if (message == null)
-                message = "Reason Unknown";
-
             GlobalConfig.Instance.NativeExit = true;
             ConfigManager.Save();
 
-            Log.Warn($"Exiting: {message}");
-
             TaskSystems.Kill();
-            BootLoader.Kill();
             DiscordNetworkHandlers.Kill();
-            FileLogger.Kill();
 
             Environment.Exit(0);
         }
@@ -52,64 +45,62 @@ namespace Polaris.Boot
 
                 try
                 {
-                    BuildInfo.Retrieve();
+                    string[] versArgs = Resources.Version.Split('.');
+
+                    Version = NiveraLib.Versioning.Version.Get(
+                        int.Parse(versArgs[0]),
+                        int.Parse(versArgs[1]),
+                        int.Parse(versArgs[2]),
+                        versArgs[3][0],
+                        versArgs[4] == "release" ? Release.ProductionRelease : Release.DevelopmentRelease);
+
                     TaskSystems.Restart();
                 }
                 catch (Exception ex)
                 {
-                    Log.Error(ex);
+                    Log.SendException(ex);
+
                     Console.ReadLine();
                 }
 
+                Log.SendInfo($"Welcome! Now loading version: {Version}.{Version.Release.Name}", LogID);
+
                 try
                 {
+                    Log.SendInfo($"Loading your bot configuration ..");
+
                     ConfigManager.Load();
 
-                    DebugConfigs();
-
                     if (!GlobalConfig.Instance.NativeExit)
-                    {
-                        Log.Error("Polaris did not exit natively on previous shutdown. Please, do not close Polaris through the task manager etc., you may lose your saved data!");
-                        Log.Error("Ignore this if it is your first startup.");
-                    }
+                        Log.SendError($"Please refrain from sending a SIGABRT to this process. We cannot save your config.", LogID);
 
                     GlobalConfig.Instance.NativeExit = false;
-
                     ConfigManager.Save();
                 }
                 catch (Exception ex)
                 {
-                    Log.Error(ex);
+                    Log.SendException(ex, LogID);
+
                     Console.ReadLine();
                 }
 
                 NativeHandlers.InstallHandlers();
 
-                Log.Info($"Starting up (v{BuildInfo.Version}) ..");
-
                 await BootLoader.Commence(args);
 
-                CustomCommandManager.LoadCommands();
+                Log.SendRaw(Resources.Logo, ConsoleColor.Green);
 
-                Log.Info("Welcome to Polaris!");
-
-                Console.WriteLine(Resources.Logo);
-
-                Log.Info("Thank you for using Polaris!");
-
-                PluginManager.Enable();
-
-                UptimeCounter = new Reporter(1, -1,
-                    () => true,
-                    () => null,
-                    x =>
-                    {
-                        UptimeSeconds++;
-                    });
+                UptimeCounter = new Timer("PolarisUptimeCounter", false, 1000, (x, y) =>
+                {
+                    UptimeSeconds += y;
+                });
 
                 UptimeCounter.Start();
 
                 await DiscordNetworkHandlers.InstallAsync();
+
+                MusicSearch.Load();
+
                 await Task.Delay(-1);
             }
             catch (Exception ex)
@@ -119,23 +110,19 @@ namespace Polaris.Boot
             }
         }
 
-        public static void DebugConfigs()
-        {
-            if (GlobalConfig.Instance.Debug)
-            {
-                Log.Arguments(GlobalConfig.Instance);
-            }
-        }
-
         public static void LoadNivera()
         {
-            DiscordLogger = new DiscordLogger();
-            FileLogger = new FileLogger();
-            PolarisLogger = new PolarisLogger(new Nivera.Logging.SystemConsoleLogger());
-            PolarisLogger.Loggers.Add(DiscordLogger);
-            PolarisLogger.Loggers.Add(FileLogger);
+            LibProperties.InstallLogger(
+                new LogControllerConfig()
+                .ResetColorConfig()
+                .ResetLogLevel()
+                .AddLogLevel(MessageLevel.Output)
+                .AddLogLevel(MessageLevel.Debug)
+                .AddLogLevel(MessageLevel.JsonObject)
+                .AddLogLevel(MessageLevel.Trace)
+                .AddLogLevel(MessageLevel.Verbose), new List<ILogger>() { (DiscordLogger = new DiscordLogger()), new ConsoleLogger() });
 
-            LibProperties.Load(new LibConfig(PolarisLogger, true, true, false, true));
+            LibProperties.Load(new LibConfig(false, false));
         }
     }
 }

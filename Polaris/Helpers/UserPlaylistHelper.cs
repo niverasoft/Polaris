@@ -17,7 +17,7 @@ namespace Polaris.Helpers
                 Author = lavalinkTrack.Author,
                 Duration = lavalinkTrack.Length,
                 Title = lavalinkTrack.Title,
-                URL = lavalinkTrack.Uri.AbsoluteUri
+                Url = lavalinkTrack.Uri.AbsoluteUri
             };
         }
 
@@ -32,7 +32,7 @@ namespace Polaris.Helpers
                     Author = lavalinkTracks[i].Author,
                     Duration = lavalinkTracks[i].Length,
                     Title = lavalinkTracks[i].Title,
-                    URL = lavalinkTracks[i].Uri.AbsoluteUri
+                    Url = lavalinkTracks[i].Uri.AbsoluteUri
                 });
             }
 
@@ -63,7 +63,6 @@ namespace Polaris.Helpers
             };
 
             GlobalConfig.Instance.UserPlaylists.Add(playlist);
-
             ConfigManager.Save();
 
             return playlist;

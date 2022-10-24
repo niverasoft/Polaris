@@ -4,34 +4,29 @@ using System.Linq;
 using Polaris.Config;
 using Polaris.Helpers;
 
-using Nivera;
+using NiveraLib;
+using NiveraLib.Logging;
 
 namespace Polaris.Boot
 {
     public static class StartupArguments
     {
-        static StartupArguments()
-        {
-            Log.JoinCategory("boot/args");
-        }
+        private static LogId logId = new LogId("boot / args", 103);
 
         public static void Parse(string[] args)
         {
             if (args.Length <= 0)
             {
-                Log.Info("No startup arguments detected.");
+                Log.SendInfo("No startup arguments detected.", logId);
+
                 return;
             }
-
-            Log.Info($"Parsing startup arguments from string {string.Join(",", args)}");
 
             foreach (string arg in args)
             {
                 if (arg.StartsWith("-token="))
                 {
                     BotToken = arg.Replace("-token=", "");
-
-                    Log.Info("Received bot token in args.");
 
                     GlobalConfig.Instance.Token = Encoding.UTF32.GetBytes(BotToken);
 
@@ -42,8 +37,6 @@ namespace Polaris.Boot
                 {
                     LavalinkAddress = arg.Replace("-lavaip=", "");
 
-                    Log.Info("Received lavalink server address in args.");
-
                     GlobalConfig.Instance.LavalinkAddress = Encoding.UTF32.GetBytes(LavalinkAddress);
 
                     ConfigManager.Save();
@@ -52,8 +45,6 @@ namespace Polaris.Boot
                 if (arg.StartsWith("-lavapass="))
                 {
                     LavalinkPassword = arg.Replace("-lavapass=", "");
-
-                    Log.Info("Received lavalink server password in args.");
 
                     GlobalConfig.Instance.LavalinkPassword = Encoding.UTF32.GetBytes(LavalinkPassword);
 
@@ -72,14 +63,7 @@ namespace Polaris.Boot
                                 if (bool.TryParse(paramValue, out bool debug))
                                 {
                                     GlobalConfig.Instance.Debug = debug;
-
-                                    Log.Info($"Updated the value of Debug: {debug}; saving changes.");
-
                                     ConfigManager.Save();
-                                }
-                                else
-                                {
-                                    Log.Error($"Failed to parse {paramValue} to a boolean.");
                                 }
 
                                 break;
@@ -90,14 +74,7 @@ namespace Polaris.Boot
                                 if (bool.TryParse(paramValue, out bool verbose))
                                 {
                                     GlobalConfig.Instance.Verbose = verbose;
-
-                                    Log.Info($"Updated the value of Verbose: {verbose}; saving changes.");
-
                                     ConfigManager.Save();
-                                }
-                                else
-                                {
-                                    Log.Error($"Failed to parse {paramValue} to a boolean.");
                                 }
 
                                 break;
@@ -106,9 +83,6 @@ namespace Polaris.Boot
                         case "timestampformat":
                             {
                                 GlobalConfig.Instance.LogTimestampFormat = paramValue;
-
-                                Log.Info($"Updated the value of LogTimestampFormat: {paramValue}; saving changes.");
-
                                 ConfigManager.Save();
 
                                 break;
@@ -119,14 +93,7 @@ namespace Polaris.Boot
                                 if (ulong.TryParse(paramValue, out ulong id))
                                 {
                                     GlobalConfig.Instance.BotOwnerId = id;
-
-                                    Log.Info($"Updated the value of BotOwnerId: {id}; saving changes.");
-
                                     ConfigManager.Save();
-                                }
-                                else
-                                {
-                                    Log.Error($"Failed to parse {paramValue} to an ulong.");
                                 }
 
                                 break;
@@ -135,9 +102,6 @@ namespace Polaris.Boot
                         case "botownernick":
                             {
                                 GlobalConfig.Instance.BotOwnerNickname = paramValue;
-
-                                Log.Info($"Updated the value of BotOwnerNickname: {paramValue}; saving changes.");
-
                                 ConfigManager.Save();
 
                                 break;
@@ -148,32 +112,7 @@ namespace Polaris.Boot
                                 if (bool.TryParse(paramValue, out bool allow))
                                 {
                                     GlobalConfig.Instance.AllowLavalink = allow;
-
-                                    Log.Info($"Updated the value of AllowLavalink: {allow}; saving changes.");
-
                                     ConfigManager.Save();
-                                }
-                                else
-                                {
-                                    Log.Error($"Failed to parse {paramValue} to a boolean.");
-                                }
-
-                                break;
-                            }
-
-                        case "includesystemdebug":
-                            {
-                                if (bool.TryParse(paramValue, out bool include))
-                                {
-                                    GlobalConfig.Instance.IncludeSystemDebug = include;
-
-                                    Log.Info($"Updated the value of IncludeSystemDebug: {include}; saving changes.");
-
-                                    ConfigManager.Save();
-                                }
-                                else
-                                {
-                                    Log.Error($"Failed to parse {paramValue} to a boolean.");
                                 }
 
                                 break;
@@ -184,14 +123,7 @@ namespace Polaris.Boot
                                 if (bool.TryParse(paramValue, out bool allow))
                                 {
                                     GlobalConfig.Instance.AllowDiscordLogOutput = allow;
-
-                                    Log.Info($"Updated the value of AllowDiscordLogOutput: {allow}; saving changes.");
-
                                     ConfigManager.Save();
-                                }
-                                else
-                                {
-                                    Log.Error($"Failed to parse {paramValue} to a boolean.");
                                 }
 
                                 break;
@@ -202,38 +134,7 @@ namespace Polaris.Boot
                                 if (ulong.TryParse(paramValue, out ulong id))
                                 {
                                     GlobalConfig.Instance.DiscordLogOutputChannelId = id;
-
-                                    Log.Info($"Updated the value of DiscordLogOutputChannelId: {id}; saving changes.");
-
                                     ConfigManager.Save();
-                                }
-                                else
-                                {
-                                    Log.Error($"Failed to parse {paramValue} to an ulong.");
-                                }
-
-                                break;
-                            }
-
-                        case "discordmentionids":
-                            {
-                                foreach (var idstr in paramValue.Split(','))
-                                {
-                                    if (ulong.TryParse(idstr, out ulong id))
-                                    {
-                                        if (!GlobalConfig.Instance.DiscordPingIds.Contains(id))
-                                            break;
-
-                                        GlobalConfig.Instance.DiscordPingIds.Add(id);
-
-                                        Log.Info($"Updated the value of DiscordPingIds: {id}; saving changes.");
-
-                                        ConfigManager.Save();
-                                    }
-                                    else
-                                    {
-                                        Log.Error($"Failed to parse {paramValue} to an ulong.");
-                                    }
                                 }
 
                                 break;
@@ -244,14 +145,7 @@ namespace Polaris.Boot
                                 if (bool.TryParse(paramValue, out bool allow))
                                 {
                                     GlobalConfig.Instance.LavalinkAtStart = allow;
-
-                                    Log.Info($"Updated the value of LavalinkAtStart: {allow}; saving changes.");
-
                                     ConfigManager.Save();
-                                }
-                                else
-                                {
-                                    Log.Error($"Failed to parse {paramValue} to a boolean.");
                                 }
 
                                 break;
@@ -262,33 +156,24 @@ namespace Polaris.Boot
                                 if (bool.TryParse(paramValue, out bool check))
                                 {
                                     GlobalConfig.Instance.CheckPackages = check;
-
-                                    Log.Info($"Updated the value of CheckPackages: {check}; saving changes.");
-
                                     ConfigManager.Save();
-                                }
-                                else
-                                {
-                                    Log.Error($"Failed to parse {paramValue} to a boolean.");
                                 }
 
                                 break;
                             }
 
-                        case "allowcustomcommands":
+                        case "spotifyclientid":
                             {
-                                if (bool.TryParse(paramValue, out bool allow))
-                                {
-                                    GlobalConfig.Instance.AllowCustomCommands = allow;
+                                GlobalConfig.Instance.SpotifyClientId = paramValue;
+                                ConfigManager.Save();
 
-                                    Log.Info($"Updated the value of AllowCustomCommands: {allow}; saving changes.");
+                                break;
+                            }
 
-                                    ConfigManager.Save();
-                                }
-                                else
-                                {
-                                    Log.Error($"Failed to parse {paramValue} to a boolean.");
-                                }
+                        case "spotifyclientsecret":
+                            {
+                                GlobalConfig.Instance.SpotifyClientSecret = paramValue;
+                                ConfigManager.Save();
 
                                 break;
                             }

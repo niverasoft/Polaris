@@ -2,70 +2,33 @@
 using System.Threading.Tasks;
 using System.Collections.Generic;
 
-using Nivera;
-
-using Polaris.Reporting;
+using NiveraLib;
+using NiveraLib.Timers;
+using NiveraLib.Logging;
 
 namespace Polaris.Boot
 {
-    public class TaskWatchObject : ReporterObject
-    {
-        public long TicksCount;
-        public long TotalTicks;
-        public long ErroredTicks;
-    }
-
     public static class TaskSystems
     {
-        private static Reporter reporter;
+        private static Timer reporter;
+        private static LogId logId = new LogId("core / taskScheduler", 102);
 
         static TaskSystems()
         {
-            Log.JoinCategory("taskscheduler");
-
-            reporter = new Reporter(120, -1, () =>
+            reporter = new Timer("TaskSchedulerTickChecker", false, 120000, (x, y) =>
             {
-                return true;
-            }, () =>
-
-            {
-                return new TaskWatchObject()
-                {
-                    ErroredTicks = ErroredTicks,
-                    TicksCount = TicksCount,
-                    TotalTicks = TotalTicks
-                };
-            }, 
-            
-            x =>
-            {
-                Log.Verbose($"TaskWatchService Reporting");
-
-                bool isBehind = IsBehind();
-
-                if (IsBehind())
-                {
-                    Log.Warn($"IsBehind() => true");
-                }
-                else
-                {
-                    Log.Info($"IsBehind() => false");
-                }
-
-                TaskWatchObject taskWatchObject = x as TaskWatchObject;
-
-                long difference = taskWatchObject.TotalTicks - taskWatchObject.TicksCount;
+                long difference = TotalTicks - ErroredTicks;
 
                 if (difference >= MaxTickDifference)
                 {
-                    Log.Error($"Task scheduler is running {difference} ticks behind! It's recommended to restart the bot. The task scheduler will restart itself if this continues!");
+                    Log.SendError($"Task scheduler is running {difference} ticks behind! It's recommended to restart the bot. The task scheduler will restart itself if this continues!", logId);
 
                     if (difference >= DifferenceToRestart)
                     {
                         List<Action> updateTasks = new List<Action>(_updateTasks);
                         List<Action> secondUpdateTasks = new List<Action>(_secondUpdateTasks);
 
-                        Log.Error($"Task scheduler is restarting!");
+                        Log.SendError($"Task scheduler is restarting!");
 
                         Restart(true);
 
@@ -74,18 +37,21 @@ namespace Polaris.Boot
                     }
                 }
 
-                if (taskWatchObject.ErroredTicks >= MaxTickDifference / 2)
+                if (ErroredTicks >= MaxTickDifference / 2)
                 {
-                    Log.Error($"There are too many errored ticks! It's recommended to restart the bot. The task scheduler will restart itself if this continues!");
+                    Log.SendError($"There are too many errored ticks! It's recommended to restart the bot. The task scheduler will restart itself if this continues!", logId);
 
-                    if (taskWatchObject.ErroredTicks >= DifferenceToRestart / 2)
+                    if (ErroredTicks >= DifferenceToRestart / 2)
                     {
                         List<Action> updateTasks = new List<Action>(_updateTasks);
                         List<Action> secondUpdateTasks = new List<Action>(_secondUpdateTasks);
 
-                        Log.Error($"Task scheduler is restarting (too many errored ticks)!");
+                        Log.SendError($"Task scheduler is restarting (too many errored ticks)!");
 
                         Restart(true);
+
+                        _updateTasks.AddRange(updateTasks);
+                        _secondUpdateTasks.AddRange(secondUpdateTasks);
                     }
                 }
             });
@@ -106,17 +72,11 @@ namespace Polaris.Boot
         public static bool IsPaused;
         public static bool ShouldKill;
 
-        public static long TicksCount;
         public static long TotalTicks;
         public static long ErroredTicks;
 
-        public const long MaxTickDifference = 100;
-        public const long DifferenceToRestart = 500;
-
-        public static bool IsBehind()
-        {
-            return TicksCount - ErroredTicks > MaxTickDifference;
-        }
+        public const long MaxTickDifference = 5;
+        public const long DifferenceToRestart = 15;
 
         public static void Kill()
         {
@@ -136,6 +96,8 @@ namespace Polaris.Boot
             IsPaused = false;
             ShouldKill = false;
             HasExited = false;
+            TotalTicks = 0;
+            ErroredTicks = 0;
 
             StartUpdateTask();
             StartSecondUpdateTask();
@@ -183,8 +145,6 @@ namespace Polaris.Boot
                     }
                 }
 
-                Log.Verbose("Killed Update Task");
-
                 OnUpdateKilled();
             });
         }
@@ -205,8 +165,6 @@ namespace Polaris.Boot
                     }
                 }
 
-                Log.Verbose("Killed Second Update Task");
-
                 OnSecondUpdateKilled();
             });
         }
@@ -220,14 +178,12 @@ namespace Polaris.Boot
                     TotalTicks++;
 
                     action();
-
-                    TicksCount++;
                 }
                 catch (Exception ex)
                 {
                     ErroredTicks++;
 
-                    Log.Fatal($"{action.Method.DeclaringType.FullName.ToLower()}.{action.Method.Name.ToLower()} caused an exception: {ex.Message}");
+                    Log.SendFatal($"{action.Method.DeclaringType.FullName.ToLower()}.{action.Method.Name.ToLower()} caused an exception: {ex.Message}", logId);
                 }
             }
         }
@@ -238,15 +194,15 @@ namespace Polaris.Boot
             {
                 try
                 {
-                    action();
+                    TotalTicks++;
 
-                    TicksCount++;
+                    action();
                 }
                 catch (Exception ex)
                 {
                     ErroredTicks++;
 
-                    Log.Fatal($"{action.Method.DeclaringType.FullName.ToLower()}.{action.Method.Name.ToLower()} caused an exception: {ex.Message}");
+                    Log.SendFatal($"{action.Method.DeclaringType.FullName.ToLower()}.{action.Method.Name.ToLower()} caused an exception: {ex.Message}", logId);
                 }
             }
         }

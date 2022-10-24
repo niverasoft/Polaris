@@ -1,145 +1,134 @@
-﻿using System.Collections.Generic;
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 
 using DSharpPlus.Entities;
 
 using Polaris.Config;
-using Polaris.Discord;
 
-using Nivera;
-using Nivera.Logging;
+using NiveraLib.Logging;
+
+using System;
+using System.Collections.Concurrent;
 
 namespace Polaris.Logging
 {
     public class DiscordLogger : ILogger
     {
-        private DiscordChannel _logChannel;
-        private List<string> _tagMentions = new List<string>();
-        private string _roleMention;
+        private ConcurrentQueue<LogWriter> _queuedLogs = new ConcurrentQueue<LogWriter>();
 
-        private DiscordColor _warnColor = new DiscordColor("#FFAA00");
-        private DiscordColor _errorColor = new DiscordColor("#FF0000");
-        private DiscordColor _infoColor = new DiscordColor("#A1F6D3");
-        private DiscordColor _debugColor = new DiscordColor("#00FFFB");
-        private DiscordColor _verboseColor = new DiscordColor("#00D1FF");
+        public DiscordChannel Channel { get; private set; }
 
-        public LogBuilder Builder => new LogBuilder(this);
+        public LogWriter LogWriter => new LogWriter(this);
 
-        public bool ChannelFound => _logChannel != null;
-
-        public DiscordLogger()
+        public void SetLogChannel(DiscordChannel channel)
         {
-            Log.JoinCategory("logging/discord");
-        }
-
-        public async Task FindChannel(ulong channelId)
-        {
-            if (channelId == 0 || !GlobalConfig.Instance.AllowDiscordLogOutput)
-            {
-                Log.Info("Discord log output is disabled.");
-
-                return;
-            }
-
-            _logChannel = await DiscordNetworkHandlers.GlobalClient.GetChannelAsync(channelId);
-
-            if (_logChannel == null)
-                Log.Error("Failed to find the Discord log channel.");
-            else
-                Log.Info($"Found the Discord log channel: {_logChannel.Name} in {_logChannel.Guild.Name}");
-
-            if (GlobalConfig.Instance.DiscordPingIds.Count > 0)
-            {
-                foreach (var id in GlobalConfig.Instance.DiscordPingIds)
-                {
-                    _roleMention += $" <@&{id}>";
-                }
-
-                Log.Info($"Role mention set!\n{_roleMention}");
-            }
-        }
-
-        public void WriteBuilder(LogBuilder logBuilder)
-        {
-            WriteLine(logBuilder.GetLine());
-        }
-
-        public void WriteLine(LogLine logLine)
-        {
-            if (_logChannel == null)
+            if (channel == null)
                 return;
 
-            string msg = GetMessageString(logLine);
-            string tag = GetDiscordTag(msg);
-            DiscordColor color = GetColor(msg);
+            if (channel.Id != GlobalConfig.Instance.DiscordLogOutputChannelId)
+                return;
 
-            DiscordEmbedBuilder builder = new DiscordEmbedBuilder();
+            Channel = channel;
 
-            builder.WithAuthor("Polaris Console Output");
-            builder.WithTitle(tag);
-            builder.WithColor(color);
-            builder.WithDescription($"```yaml\n{msg}\n```");
+            while (_queuedLogs.TryDequeue(out var log))
+            {
+                Write(log);
+            }
 
-            if (_tagMentions.Contains(tag) && !string.IsNullOrEmpty(_roleMention))
-                _logChannel.SendMessageAsync(_roleMention);
-
-            _logChannel.SendMessageAsync(builder);
+            _queuedLogs.Clear();
+            _queuedLogs = null;
         }
 
-        private string GetMessageString(LogLine logLine)
+        public ILogger CopyLogger()
+        {
+            return new DiscordLogger()
+            {
+                Channel = Channel,
+            };
+        }
+
+        public void Destroy()
+        {
+            Channel = null;
+        }
+
+        public LogId GenerateId(string name)
+        {
+            return LogIdGenerator.GenerateId(name);
+        }
+
+        public LogId GenerateId(Type type, string name)
+        {
+            return LogIdGenerator.GenerateId(type, name);
+        }
+
+        public LogId GenerateId<T>(string name)
+        {
+            return LogIdGenerator.GenerateId<T>(name);
+        }
+
+        public bool Write(LogWriter logWriter)
+        {
+            if (Channel == null)
+            {
+                _queuedLogs.Enqueue(logWriter);
+
+                return false;
+            }
+
+            Task.Run(async () =>
+            {
+                await Channel.SendMessageAsync(ToString(logWriter));
+            });
+
+            return true;
+        }
+
+        public bool Write(object text, ConsoleColor color)
+        {
+            if (Channel == null)
+            {
+                _queuedLogs.Enqueue(new LogWriter()
+                    .WriteLine(text, color));
+
+                return false;
+            }
+
+            Task.Run(async () =>
+            {
+                await Channel.SendMessageAsync(text.ToString());
+            });
+
+            return true;
+        }
+
+        public bool Write(Tuple<object, ConsoleColor> log)
+        {
+            if (Channel == null)
+            {
+                _queuedLogs.Enqueue(new LogWriter()
+                    .WriteLine(log.Item1, log.Item2));
+
+                return false;
+            }
+
+            Task.Run(async () =>
+            {
+                await Channel.SendMessageAsync(log.Item1.ToString());
+            });
+
+            return true;
+        }
+
+        private string ToString(LogWriter logWriter)
         {
             string str = "";
 
-            foreach (var tuple in logLine.ReadAllLines())
+            foreach (var logLine in logWriter.Lines)
             {
-                str += $"{tuple.Item1} ";
+                str += $"{logLine.Item1} ";
             }
 
             return str;
-        }
-
-        private DiscordColor GetColor(string msg)
-        {
-            msg = msg.ToLower();
-
-            if (msg.Contains("error"))
-                return _errorColor;
-
-            if (msg.Contains("warn"))
-                return _warnColor;
-
-            if (msg.Contains("info"))
-                return _infoColor;
-
-            if (msg.Contains("debug"))
-                return _debugColor;
-
-            if (msg.Contains("verbose"))
-                return _verboseColor;
-
-            return _infoColor;
-        }
-
-        private string GetDiscordTag(string msg)
-        {
-            msg = msg.ToLower();
-
-            if (msg.Contains("error"))
-                return "Error";
-
-            if (msg.Contains("warn"))
-                return "Warning";
-
-            if (msg.Contains("info"))
-                return "Information";
-
-            if (msg.Contains("debug"))
-                return "Debug";
-
-            if (msg.Contains("verbose"))
-                return "Verbose";
-
-            return "Unknown Tag";
         }
     }
 }
