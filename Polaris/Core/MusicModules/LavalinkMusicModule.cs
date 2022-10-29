@@ -30,6 +30,7 @@ namespace Polaris.Core.MusicModules
         private bool isPlaying;
         private LogId logId;
         private ServerMusicCore core;
+        private bool tempDisableFinishedHandler;
 
         public const string TimeSpanFormat = "hh:mm:ss";
 
@@ -278,6 +279,9 @@ namespace Polaris.Core.MusicModules
                 Log.SendTrace($"Finished playing {e.Track.Title} in {x.Guild.Name}: {e.Reason}");
 
                 isPlaying = false;
+
+                if (tempDisableFinishedHandler)
+                    return;
 
                 if (IsLooping)
                 {
@@ -561,29 +565,21 @@ namespace Polaris.Core.MusicModules
 
         public async Task SkipAsync()
         {
-            if (!Queue.TryDequeue(out var nextTrack))
+            tempDisableFinishedHandler = true;
+
+            await StopAsync();
+
+            if (Queue.TryDequeue(out LavalinkTrack))
             {
-                await TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
-                    .WithAuthor("There is nothing in the queue, stopping playback.")
-                    .MakeWarn());
-
-                IsLooping = false;
-
-                await LavalinkGuild.StopAsync();
-
-                return;
+                await LavalinkGuild.PlayAsync(LavalinkTrack);
+                await NowPlaying();
+            }
+            else
+            {
+                await ClearQueueAsync();
             }
 
-            bool loop = IsLooping;
-
-            IsLooping = false;
-
-            await LavalinkGuild.StopAsync();
-            await LavalinkGuild.PlayAsync(nextTrack);
-
-            await NowPlaying();
-
-            IsLooping = loop;
+            tempDisableFinishedHandler = false;
         }
 
         public async Task PlayAsync(string searchOrUrl, DiscordChannel voice, DiscordChannel text, DiscordUser author = null)

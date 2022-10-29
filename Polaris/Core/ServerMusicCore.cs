@@ -133,10 +133,8 @@ namespace Polaris.Core
 
         public void Join(DiscordChannel voice, DiscordChannel text, string type)
         {
-            if (type == "lavalink")
-                lavalinkModule.JoinAsync(voice, text);
-            else
-                radioModule.JoinAsync(voice, text);
+            lavalinkModule.JoinAsync(voice, text);
+            radioModule.JoinAsync(voice, text);
         }
 
         public void Pause()
