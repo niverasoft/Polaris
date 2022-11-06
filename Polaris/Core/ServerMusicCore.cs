@@ -8,6 +8,7 @@ using Polaris.Entities;
 
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace Polaris.Core
 {
@@ -133,8 +134,8 @@ namespace Polaris.Core
 
         public void Join(DiscordChannel voice, DiscordChannel text, string type)
         {
-            lavalinkModule.JoinAsync(voice, text);
-            radioModule.JoinAsync(voice, text);
+            Task.Run(async () => await lavalinkModule.JoinAsync(voice, text));
+            Task.Run(async () => await radioModule.JoinAsync(voice, text));
         }
 
         public void Pause()

@@ -7,7 +7,6 @@ using System.Linq;
 using System.Threading.Tasks;
 
 using YoutubeExplode;
-using YoutubeSearch;
 
 using SpotifyAPI.Web;
 
@@ -179,12 +178,8 @@ namespace Polaris.Helpers.Music
         {
             try
             {
-                Log.SendTrace($"Converting link: {link}");
-
                 if (link.Contains("spotify.com/playlist/"))
                 {
-                    Log.SendTrace($"Identified playlist!");
-
                     link = StringHelpers.RemoveBeforeIndex(link, link.LastIndexOf('/'));
 
                     int idIndex = link.LastIndexOf('?');
@@ -200,12 +195,8 @@ namespace Polaris.Helpers.Music
                     if (playlist == null)
                         return new ErrorSearchResult("Failed to fetch that playlist.");
 
-                    Log.SendTrace($"Playlist received.");
-
                     var tracks = playlist.Tracks.Items;
                     var convertedTracks = new List<IMusicTrack>();
-
-                    Log.SendTrace("Converting ..");
 
                     foreach (var trackObj in tracks)
                     {
@@ -226,21 +217,22 @@ namespace Polaris.Helpers.Music
                             if (convertedTrack.SelectedTrack == null)
                                 continue;
 
-                            Log.SendTrace($"Track converted: {convertedTrack.SelectedTrack.Title}");
-
                             convertedTracks.Add(convertedTrack.SelectedTrack);
                         }
                         else
                             Log.SendWarn($"Failed to find track: {spotifyTrack.Name}");
                     }
 
-                    return new PlaylistSearchResult(playlist.Name, playlist.Owner.DisplayName, playlist.Owner.Uri, playlist.Images.First().Url, convertedTracks.First(), convertedTracks);
+                    return new PlaylistSearchResult(playlist.Name, 
+                        playlist.Owner.DisplayName, 
+                        playlist.Owner.Uri, 
+                        playlist.Images.First().Url, 
+                        convertedTracks.First(), 
+                        convertedTracks);
                 }
 
                 if (link.Contains("spotify.com/album/"))
                 {
-                    Log.SendTrace($"Identified album!");
-
                     link = StringHelpers.RemoveBeforeIndex(link, link.LastIndexOf('/'));
 
                     int idIndex = link.LastIndexOf('?');
@@ -255,8 +247,6 @@ namespace Polaris.Helpers.Music
 
                     if (playlist == null)
                         return new ErrorSearchResult("Failed to fetch that playlist.");
-
-                    Log.SendTrace($"Album received.");
 
                     var tracks = playlist.Tracks.Items;
                     var convertedTracks = new List<IMusicTrack>();
@@ -277,8 +267,6 @@ namespace Polaris.Helpers.Music
                             if (convertedTrack.SelectedTrack == null)
                                 continue;
 
-                            Log.SendTrace($"Track converted: {convertedTrack.SelectedTrack.Title}");
-
                             convertedTracks.Add(convertedTrack.SelectedTrack);
                         }
                         else
@@ -290,8 +278,6 @@ namespace Polaris.Helpers.Music
 
                 if (link.Contains("spotify.com/track/"))
                 {
-                    Log.SendTrace($"Identified track!");
-
                     link = StringHelpers.RemoveBeforeIndex(link, link.LastIndexOf('/'));
 
                     int idIndex = link.LastIndexOf('?');
@@ -307,14 +293,10 @@ namespace Polaris.Helpers.Music
                     if (track == null)
                         return new ErrorSearchResult("Failed to fetch that track.");
 
-                    Log.SendTrace($"Track received.");
-
                     var convertedTrack = await MusicSearch.SearchOnYouTubeQuery(track.Name, 1);
 
                     if (convertedTrack is ErrorSearchResult error)
                         return error;
-
-                    Log.SendTrace($"Converted track: {convertedTrack.SelectedTrack.Title}");
 
                     return convertedTrack;
                 }
@@ -368,7 +350,7 @@ namespace Polaris.Helpers.Music
                 return await SearchOnYouTubeLink(query);
 
             if (type == SearchType.YouTubeQuery)
-                return await SearchOnYouTubeQuery(query);
+                return await SearchOnYouTubeQuery(query, 1);
 
             return new ErrorSearchResult("Failed to match a known search type.");
         }
@@ -410,8 +392,6 @@ namespace Polaris.Helpers.Music
                     }
                 }
 
-                Log.SendTrace($"Yt-Query: Found {results.Count} results for {query}");
-
                 if (results.Count > 0)
                     return new QuerySearchResult(results);
                 else
@@ -429,51 +409,30 @@ namespace Polaris.Helpers.Music
             {
                 var searchType = GetFilter(link);
 
-                Log.SendTrace($"Yt-Link: Using search filter: {searchType}");
-
                 if (searchType == SearchFilter.Playlist)
                 {
-                    Log.SendTrace($"Identified Playlist, parsing ID");
-
                     var playlistId = PlaylistId.TryParse(link);
 
                     if (!playlistId.HasValue)
                         return new ErrorSearchResult("Failed to extract the playlist ID.");
-
-                    Log.SendTrace($"ID parsed: {playlistId.Value.Value}");
-                    Log.SendTrace($"Retrieving playlist ..");
 
                     var playlist = await _search.Playlists.GetAsync(playlistId.Value);
 
                     if (playlist == null)
                         return new ErrorSearchResult("Failed to retrieve specified playlist.");
 
-                    Log.SendTrace($"Playlist retrieved, converting tracks.");
-
                     List<PlaylistVideo> plVideos = new List<PlaylistVideo>();
                     List<IMusicTrack> converted = new List<IMusicTrack>();
 
-                    Log.SendTrace($"Retrieiving track list ..");
-
                     await foreach (var res in _search.Playlists.GetVideosAsync(playlistId.Value))
-                    {
-                        Log.SendTrace($"Adding: {res.Title}");
-
                         plVideos.Add(res);
-                    }
 
                     foreach (var video in plVideos)
                     {
-                        Log.SendTrace($"Converting: {video.Title}");
-
                         var ytVid = await _search.Videos.GetAsync(video.Id);
 
                         converted.Add(YtExplodeToMusicTrack(ytVid));
-
-                        Log.SendTrace($"Converted: {video.Title}");
                     }
-
-                    Log.SendTrace($"Loaded {converted.Count} track(s) from playlist {playlist.Title}");
 
                     return new PlaylistSearchResult(
                         playlist.Title,
@@ -520,17 +479,13 @@ namespace Polaris.Helpers.Music
                                         List<IMusicTrack> converted = new List<IMusicTrack>();
 
                                         await foreach (var res in _search.Playlists.GetVideosAsync(PlaylistId.Parse(playlistSearch.Url)))
-                                        {
                                             plVideos.Add(res);
-                                        }
 
                                         foreach (var video in plVideos)
                                         {
                                             var ytVid = await _search.Videos.GetAsync(video.Id);
 
                                             converted.Add(YtExplodeToMusicTrack(ytVid));
-
-                                            Log.SendInfo($"Track converted.", _logId);
                                         }
 
                                         return new PlaylistSearchResult(

@@ -25,6 +25,8 @@ namespace Polaris.Core.MusicModules
         private ServerMusicCore core;
         private Thread _ffmpegThread;
         private LogId logId;
+        private NiveraLib.Timers.Timer aloneTimer;
+        private int aloneTime;
 
         private volatile Process _ffmpegProcess;
         private volatile Stream _ffmpegStream;
@@ -47,13 +49,32 @@ namespace Polaris.Core.MusicModules
         public int UdpPing { get => _voiceNextConn?.UdpPing ?? 0; }
 
         public DiscordChannel Text { get => _textChannel; }
-        public DiscordChannel Voice { get => _voiceChannel; }
+        public DiscordChannel Voice { get => _voiceNextConn.TargetChannel; }
 
         public RadioMusicModule(ServerMusicCore core, ulong serverId)
         {
             this.core = core;
 
             logId = new LogId("cores / radio", (long)serverId);
+
+            aloneTimer = new NiveraLib.Timers.Timer("com.polaris.radio.alonetimer", false, 1000, async (x, y) =>
+            {
+                if (IsConnected)
+                {
+                    if (Voice.Users.Count < 2)
+                        aloneTime++;
+
+                    if (aloneTime >= 3600)
+                    {
+                        await DisconnectAsync();
+                        await Text?.SendMessageAsync($"{EmotePicker.StopEmote} Left the voice channel - you left me alone.");
+
+                        aloneTime = 0;
+                    }
+                }
+            });
+
+            aloneTimer.Start();
 
             _voiceNext = DiscordNetworkHandlers.GlobalClient.GetVoiceNext();
         }
@@ -71,6 +92,8 @@ namespace Polaris.Core.MusicModules
 
         public async Task JoinAsync(DiscordChannel voice, DiscordChannel text)
         {
+            Log.SendInfo($"[ Radio ]: Connecting to {voice.Name}");
+
             if (IsConnected)
             {
                 if (_voiceNextConn.TargetChannel.Id == voice.Id)
@@ -88,6 +111,8 @@ namespace Polaris.Core.MusicModules
             await text.SendMessageAsync(new DiscordEmbedBuilder()
                 .WithAuthor($"Joined {voice.Name}!")
                 .MakeSuccess());
+
+            Log.SendInfo($"[ Radio ]: Connected to {voice.Name}");
         }
 
         public async Task NowPlayingAsync()

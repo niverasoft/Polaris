@@ -22,6 +22,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Polaris.Helpers.Music;
+using Open.Collections;
+using NiveraLib.Timers;
 
 namespace Polaris.Core.MusicModules
 {
@@ -30,7 +32,8 @@ namespace Polaris.Core.MusicModules
         private bool isPlaying;
         private LogId logId;
         private ServerMusicCore core;
-        private bool tempDisableFinishedHandler;
+        private int aloneTime;
+        private Timer aloneTimer;
 
         public const string TimeSpanFormat = "hh:mm:ss";
 
@@ -165,7 +168,7 @@ namespace Polaris.Core.MusicModules
             }
             else
             {
-                Log.SendInfo($"Trying to connect to a node ..", logId);
+                Log.SendInfo($"Searching for connected nodes ..", logId);
 
                 LavalinkNode = Lavalink.ConnectedNodes.FirstOrDefault().Value;
 
@@ -173,9 +176,28 @@ namespace Polaris.Core.MusicModules
                 {
                     InstallHandlers(LavalinkNode);
 
-                    Log.SendInfo($"Succesfully connected to a node: {LavalinkNode.NodeEndpoint}", logId);
+                    Log.SendInfo($"Installed handlers in node: {LavalinkNode.NodeEndpoint}", logId);
                 }
             }
+
+            aloneTimer = new Timer("com.polaris.lavalink.alonetimer", false, 1000, async (x, y) =>
+            {
+                if (Voice == null)
+                    return;
+
+                if (Voice.Users.Count < 2)
+                    aloneTime++;
+
+                if (aloneTime >= 3600)
+                {
+                    await LeaveAsync();
+                    await TextChannel?.SendMessageAsync($"{EmotePicker.StopEmote} Left the voice channel - you left me alone.");
+
+                    aloneTime = 0;
+                }
+            });
+
+            aloneTimer.Start();
         }
 
         private Task Lavalink_NodeDisconnected(LavalinkNodeConnection sender, NodeDisconnectedEventArgs e)
@@ -228,8 +250,6 @@ namespace Polaris.Core.MusicModules
                 if (x.Guild.Id != (ulong)logId.Id)
                     return Task.CompletedTask;
 
-                Log.SendTrace($"Connected to guild: {x.Guild.Name}", logId);
-
                 TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
                     .WithAuthor($"Joined {x.Channel.Name}")
                     .MakeSuccess());
@@ -244,8 +264,6 @@ namespace Polaris.Core.MusicModules
             {
                 if (x.Guild.Id != (ulong)logId.Id)
                     return Task.CompletedTask;
-
-                Log.SendTrace($"Disconnected from guild: {x.Guild.Name}", logId);
 
                 TextChannel?.SendMessageAsync(new DiscordEmbedBuilder()
                     .WithAuthor($"Left {x.Channel.Name}")
@@ -276,12 +294,7 @@ namespace Polaris.Core.MusicModules
                 if (x.Guild.Id != (ulong)logId.Id)
                     return;
 
-                Log.SendTrace($"Finished playing {e.Track.Title} in {x.Guild.Name}: {e.Reason}");
-
                 isPlaying = false;
-
-                if (tempDisableFinishedHandler)
-                    return;
 
                 if (IsLooping)
                 {
@@ -298,6 +311,8 @@ namespace Polaris.Core.MusicModules
                     await LavalinkGuild.PlayAsync(LavalinkTrack);
                     await NowPlaying();
                 }
+
+                await Task.Delay(500);
             };
 
             lavalinkNodeConnection.PlaybackStarted += (x, e) =>
@@ -306,8 +321,6 @@ namespace Polaris.Core.MusicModules
                     return Task.CompletedTask;
 
                 isPlaying = true;
-
-                Log.SendTrace($"Started playing {e.Track.Title} in {x.Guild.Name}");
 
                 LavalinkGuild = e.Player;
                 LavalinkTrack = e.Track;
@@ -378,6 +391,8 @@ namespace Polaris.Core.MusicModules
 
         public async Task JoinAsync(DiscordChannel voiceChannel, DiscordChannel textChannel)
         {
+            Log.SendInfo($"[ Lavalink ]: Connecting to {voiceChannel.Name}");
+
             TextChannel = textChannel;
             VoiceChannel = voiceChannel;
 
@@ -392,6 +407,8 @@ namespace Polaris.Core.MusicModules
 
                 continue;
             }
+
+            Log.SendInfo($"[ Radio ]: Connected to {voiceChannel.Name}");
         }
 
         public async Task SetVolumeAsync(int volume)
@@ -565,21 +582,25 @@ namespace Polaris.Core.MusicModules
 
         public async Task SkipAsync()
         {
-            tempDisableFinishedHandler = true;
+            bool loop = IsLooping;
 
-            await StopAsync();
+            await LavalinkGuild.StopAsync();
 
-            if (Queue.TryDequeue(out LavalinkTrack))
-            {
-                await LavalinkGuild.PlayAsync(LavalinkTrack);
-                await NowPlaying();
-            }
-            else
-            {
-                await ClearQueueAsync();
-            }
+            IsLooping = loop;
 
-            tempDisableFinishedHandler = false;
+            await TextChannel?.SendMessageAsync($"{EmotePicker.NextTrackEmote} Skipped!");
+        }
+
+        public async Task ShuffleAsync()
+        {
+            var list = Queue.Shuffle();
+
+            Queue.Clear();
+
+            foreach (var track in list)
+                Queue.Enqueue(track);
+
+            await TextChannel?.SendMessageAsync($"{EmotePicker.ShuffleEmote} Queue shuffled!");
         }
 
         public async Task PlayAsync(string searchOrUrl, DiscordChannel voice, DiscordChannel text, DiscordUser author = null)
